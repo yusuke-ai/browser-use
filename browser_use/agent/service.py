@@ -508,6 +508,9 @@ class Agent(Generic[Context]):
 		"""Get next action from LLM based on current state"""
 		input_messages = self._convert_input_messages(input_messages)
 
+		# print("fdkafjalfjdjasjfksdjkfladjlkfdjkljkflfd", self.tool_calling_method)
+
+
 		if self.tool_calling_method == 'raw':
 			output = self.llm.invoke(input_messages)
 			# TODO: currently invoke does not return reasoning_content, we should override invoke
@@ -518,11 +521,19 @@ class Agent(Generic[Context]):
 			except (ValueError, ValidationError) as e:
 				logger.warning(f'Failed to parse model output: {output} {str(e)}')
 				raise ValueError('Could not parse response.')
-
 		elif self.tool_calling_method is None:
-			structured_llm = self.llm.with_structured_output(self.AgentOutput, include_raw=True)
-			response: dict[str, Any] = await structured_llm.ainvoke(input_messages)  # type: ignore
-			parsed: AgentOutput | None = response['parsed']
+			output = self.llm.invoke(input_messages)
+			# TODO: currently invoke does not return reasoning_content, we should override invoke
+			output.content = self._remove_think_tags(str(output.content))
+			try:
+				if isinstance(output.content, AgentOutput):
+					print("えーじぇんとあうとぷっと！")
+				parsed_json = extract_json_from_model_output(output.content)
+				parsed = self.AgentOutput(**parsed_json)
+			except (ValueError, ValidationError) as e:
+				print("出力", output.content)
+				logger.warning(f'Failed to parse model output: {output} {str(e)}')
+				raise ValueError('Could not parse response.')
 		else:
 			structured_llm = self.llm.with_structured_output(self.AgentOutput, include_raw=True, method=self.tool_calling_method)
 			response: dict[str, Any] = await structured_llm.ainvoke(input_messages)  # type: ignore

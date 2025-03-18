@@ -15,7 +15,7 @@ from langchain_core.messages import (
 
 logger = logging.getLogger(__name__)
 
-
+from json_repair import repair_json
 def extract_json_from_model_output(content: str) -> dict:
 	"""Extract JSON from model output, handling both plain JSON and code-block-wrapped JSON."""
 	try:
@@ -26,9 +26,16 @@ def extract_json_from_model_output(content: str) -> dict:
 			# Remove language identifier if present (e.g., 'json\n')
 			if '\n' in content:
 				content = content.split('\n', 1)[1]
+		if content.startswith("AgentOutput("):
+			content = content[12:-1] + "}"
+
+		content = repair_json(content)
+
 		# Parse the cleaned content
 		return json.loads(content)
 	except json.JSONDecodeError as e:
+		print("型", type(content))
+		print("出力", content)
 		logger.warning(f'Failed to parse model output: {content} {str(e)}')
 		raise ValueError('Could not parse response.')
 

@@ -2,6 +2,7 @@ import asyncio
 import json
 import enum
 import logging
+import os
 from typing import Dict, Generic, Optional, Type, TypeVar
 
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -27,11 +28,12 @@ from browser_use.controller.views import (
 )
 from browser_use.utils import time_execution_sync
 
+from PyPDF2 import PdfReader
+
 logger = logging.getLogger(__name__)
 
 
 Context = TypeVar('Context')
-
 
 class Controller(Generic[Context]):
 	def __init__(
@@ -62,7 +64,7 @@ class Controller(Generic[Context]):
 					if isinstance(value, enum.Enum):
 						output_dict[key] = value.value
 
-				return ActionResult(is_done=True, success=params.success, extracted_content=json.dumps(output_dict))
+				return ActionResult(is_done=True, success=params.success, extracted_content=json.dumps(output_dict, ensure_ascii=False))
 		else:
 
 			@self.registry.action(
@@ -191,7 +193,17 @@ class Controller(Generic[Context]):
 			page = await browser.get_current_page()
 			import markdownify
 
-			content = markdownify.markdownify(await page.content())
+			try:
+				pdf_content = await self.maybe_get_content_if_pdf(browser, page)
+				if pdf_content is not None:
+					content = pdf_content
+				else:
+					content = markdownify.markdownify(await page.content())
+			except Exception as e:
+				import traceback
+				traceback.print_exc()
+
+			# print("content", content)
 
 			prompt = 'Your task is to extract the content of the page. You will be given a page and a goal and you should extract all relevant information around this goal from the page. If the goal is vague, summarize the page. Respond in json format. Extraction goal: {goal}, Page: {page}'
 			template = PromptTemplate(input_variables=['goal', 'page'], template=prompt)
@@ -349,7 +361,7 @@ class Controller(Generic[Context]):
 							formatted_options = []
 							for opt in options['options']:
 								# encoding ensures AI uses the exact string in select_dropdown_option
-								encoded_text = json.dumps(opt['text'])
+								encoded_text = json.dumps(opt['text'], ensure_ascii=False)
 								formatted_options.append(f'{opt["index"]}: text={encoded_text}')
 
 							all_options.extend(formatted_options)
@@ -473,6 +485,33 @@ class Controller(Generic[Context]):
 
 	# Register ---------------------------------------------------------------
 
+	async def maybe_get_content_if_pdf(self, context, page) -> Optional[str]:
+		# すでに開いているページのURLを取得
+		current_url = page.url
+		suggested_filename = current_url.split("/")[-1]
+		print(current_url, suggested_filename)
+		unique_filename = await context._get_unique_filename(context.config.save_downloads_path, suggested_filename)
+		download_path = os.path.join(context.config.save_downloads_path, unique_filename)
+		# セッションを維持したまま再リクエストする
+		response = await page.request.get(current_url)
+		if response:
+			content_type = response.headers.get("content-type", "").lower()
+			if "application/pdf" in content_type:
+				if response.status != 200:
+					print(f"PDFの取得に失敗しました (ステータスコード: {response.status})")
+					return None
+
+				# PDFのバイナリデータを取得してファイルに書き出す
+				pdf_data = await response.body()
+				with open(download_path, "wb") as f:
+					f.write(pdf_data)
+				pdf = PdfReader(download_path)
+				text = ''
+				for page in pdf.pages:
+					text += page.extract_text() or ''
+				return text
+		return None
+
 	def action(self, description: str, **kwargs):
 		"""Decorator for registering custom actions
 
@@ -530,3 +569,4 @@ class Controller(Generic[Context]):
 			return ActionResult()
 		except Exception as e:
 			raise e
+		

@@ -56,7 +56,7 @@ async def search_web(query: str):
 		if source['score'] >= 0.2
 	]
 	# print(json.dumps(final_results, indent=4))
-	result_text = json.dumps(final_results, indent=4)
+	result_text = json.dumps(final_results, indent=4, ensure_ascii=False)
 	print(result_text)
 	return ActionResult(extracted_content=result_text, include_in_memory=True)
 

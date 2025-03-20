@@ -29,7 +29,7 @@ async def test_process_dom():
 
 		os.makedirs('./tmp', exist_ok=True)
 		with open('./tmp/dom.json', 'w') as f:
-			json.dump(dom_tree, f, indent=1)
+			json.dump(dom_tree, f, indent=1, ensure_ascii=False)
 
 		# both of these work for immobilienscout24.de
 		# await page.click('.sc-dcJsrY.ezjNCe')

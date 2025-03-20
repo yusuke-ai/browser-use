@@ -29,7 +29,9 @@ def extract_json_from_model_output(content: str) -> dict:
 		if content.startswith("AgentOutput("):
 			content = content[12:-1] + "}"
 
-		content = repair_json(content)
+		# print("before", content)
+		content = repair_json(content, ensure_ascii=False)
+		# print("after", content)
 
 		# Parse the cleaned content
 		return json.loads(content)
@@ -65,7 +67,7 @@ def _convert_messages_for_non_function_calling_models(input_messages: list[BaseM
 		elif isinstance(message, AIMessage):
 			# check if tool_calls is a valid JSON object
 			if message.tool_calls:
-				tool_calls = json.dumps(message.tool_calls)
+				tool_calls = json.dumps(message.tool_calls, ensure_ascii=False)
 				output_messages.append(AIMessage(content=tool_calls))
 			else:
 				output_messages.append(message)
@@ -121,7 +123,7 @@ def _write_messages_to_file(f: Any, messages: list[BaseMessage]) -> None:
 		elif isinstance(message.content, str):
 			try:
 				content = json.loads(message.content)
-				f.write(json.dumps(content, indent=2) + '\n')
+				f.write(json.dumps(content, indent=2, ensure_ascii=False) + '\n')
 			except json.JSONDecodeError:
 				f.write(message.content.strip() + '\n')
 
@@ -131,4 +133,4 @@ def _write_messages_to_file(f: Any, messages: list[BaseMessage]) -> None:
 def _write_response_to_file(f: Any, response: Any) -> None:
 	"""Write model response to conversation file"""
 	f.write(' RESPONSE\n')
-	f.write(json.dumps(json.loads(response.model_dump_json(exclude_unset=True)), indent=2))
+	f.write(json.dumps(json.loads(response.model_dump_json(exclude_unset=True)), indent=2, ensure_ascii=False))

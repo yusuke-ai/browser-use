@@ -73,7 +73,7 @@ class DomService:
 
 		# Only log performance metrics in debug mode
 		if debug_mode and 'perfMetrics' in eval_page:
-			logger.debug('DOM Tree Building Performance Metrics:\n%s', json.dumps(eval_page['perfMetrics'], indent=2))
+			logger.debug('DOM Tree Building Performance Metrics:\n%s', json.dumps(eval_page['perfMetrics'], indent=2, ensure_ascii=False))
 
 		return await self._construct_dom_tree(eval_page)
 

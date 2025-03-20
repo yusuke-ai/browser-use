@@ -522,6 +522,7 @@ class Agent(Generic[Context]):
 				logger.warning(f'Failed to parse model output: {output} {str(e)}')
 				raise ValueError('Could not parse response.')
 		elif self.tool_calling_method is None:
+			# print(input_messages)
 			output = self.llm.invoke(input_messages)
 			# TODO: currently invoke does not return reasoning_content, we should override invoke
 			output.content = self._remove_think_tags(str(output.content))
@@ -529,7 +530,11 @@ class Agent(Generic[Context]):
 				if isinstance(output.content, AgentOutput):
 					print("えーじぇんとあうとぷっと！")
 				parsed_json = extract_json_from_model_output(output.content)
+				# parsed_json = json.loads(json.dumps(parsed_json, ensure_ascii=False))	
+				# print(json.dumps(parsed_json, ensure_ascii=False))
 				parsed = self.AgentOutput(**parsed_json)
+				# parsed.memory =parsed.memory.encode().decode('unicode-escape')
+				print(parsed)
 			except (ValueError, ValidationError) as e:
 				print("出力", output.content)
 				logger.warning(f'Failed to parse model output: {output} {str(e)}')
@@ -961,7 +966,7 @@ class Agent(Generic[Context]):
 			plan = self._remove_think_tags(plan)
 		try:
 			plan_json = json.loads(plan)
-			logger.info(f'Planning Analysis:\n{json.dumps(plan_json, indent=4)}')
+			logger.info(f'Planning Analysis:\n{json.dumps(plan_json, indent=4, ensure_ascii=False)}')
 		except json.JSONDecodeError:
 			logger.info(f'Planning Analysis:\n{plan}')
 		except Exception as e:

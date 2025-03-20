@@ -1279,7 +1279,7 @@ class BrowserContext:
 					os.makedirs(dirname, exist_ok=True)
 
 				with open(self.config.cookies_file, 'w') as f:
-					json.dump(cookies, f)
+					json.dump(cookies, f, ensure_ascii=False)
 			except Exception as e:
 				logger.warning(f'Failed to save cookies: {str(e)}')
 

@@ -744,7 +744,8 @@ class BrowserContext:
 			
 			try:
 				# 履歴内のURLに移動
-				await page.goto(forward_url, wait_until='domcontentloaded')
+				await page.goto(forward_url, wait_until='load')
+            	await page.wait_for_load_state('networkidle')
 				logger.debug(f'Navigated forward to: {forward_url}')
 			except Exception as e:
 				logger.debug(f'Error during go_forward: {e}')

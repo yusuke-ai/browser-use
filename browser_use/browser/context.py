@@ -1307,7 +1307,7 @@ class BrowserContext:
 						print(f"Page URL remains the same: {start_url}", flush=True)
 
 			try:
-				return await perform_click(lambda: element_handle.click(timeout=1500))
+				return await perform_click(lambda: element_handle.click({"force": True, "timeout": 1500}))
 			except URLNotAllowedError as e:
 				raise e
 			except Exception:

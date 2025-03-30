@@ -149,6 +149,10 @@ class BrowserContextState:
 	"""
 
 	target_id: str | None = None  # CDP target ID
+	# ページIDをキーとしたナビゲーション履歴のディクショナリ（各履歴エントリは辞書型）
+	page_histories: dict[int, list[dict[str, str]]] = field(default_factory=dict)
+	# ページIDをキーとした現在の履歴位置のディクショナリ
+	page_history_positions: dict[int, int] = field(default_factory=dict)
 
 
 class BrowserContext:
@@ -310,6 +314,64 @@ class BrowserContext:
 		"""Get the current page"""
 		session = await self.get_session()
 		return await self._get_current_page(session)
+
+	async def _get_current_page_id(self, page: Page) -> int:
+		"""現在のページのIDを取得する"""
+		session = await self.get_session()
+		pages = session.context.pages
+		for i, p in enumerate(pages):
+			if p == page:
+				return i
+		# ページが見つからない場合は-1を返す
+		return -1
+
+	async def _track_page_navigation(self, page: Page, url: str) -> None:
+		"""ページのナビゲーション履歴を追跡する"""
+		page_id = await self._get_current_page_id(page)
+		if page_id < 0:
+			return
+		
+		# ページタイトルを取得
+		page_title = await page.title()
+		
+		# 新しいページのナビゲーション履歴を初期化
+		if page_id not in self.state.page_histories:
+			self.state.page_histories[page_id] = []
+			self.state.page_history_positions[page_id] = -1
+		
+		# 現在の履歴位置を取得
+		current_position = self.state.page_history_positions[page_id]
+		history = self.state.page_histories[page_id]
+		
+		# 現在の位置が履歴の最後でない場合、先の履歴を削除
+		if 0 <= current_position < len(history) - 1:
+			self.state.page_histories[page_id] = history[:current_position + 1]
+		
+		# 履歴エントリを作成
+		history_entry = {"url": url, "title": page_title}
+		
+		# 最後のURLが同じでない場合のみ履歴に追加（重複を避ける）
+		if not history or history[-1]["url"] != url:
+			self.state.page_histories[page_id].append(history_entry)
+			self.state.page_history_positions[page_id] = len(self.state.page_histories[page_id]) - 1
+		
+		logger.debug(f'Updated navigation history for page {page_id}: {self.state.page_histories[page_id]}')
+		logger.debug(f'Current position: {self.state.page_history_positions[page_id]}')
+
+
+	async def _can_go_back(self, page_id: int) -> bool:
+		"""戻るナビゲーションが可能かを確認"""
+		if page_id not in self.state.page_history_positions:
+			return False
+		return self.state.page_history_positions[page_id] > 0
+
+	async def _can_go_forward(self, page_id: int) -> bool:
+		"""進むナビゲーションが可能かを確認"""
+		if page_id not in self.state.page_histories or page_id not in self.state.page_history_positions:
+			return False
+		history = self.state.page_histories[page_id]
+		position = self.state.page_history_positions[page_id]
+		return position < len(history) - 1
 
 	async def _create_context(self, browser: PlaywrightBrowser):
 		"""Creates a new browser context with anti-detection measures and loads cookies if available."""
@@ -624,37 +686,82 @@ class BrowserContext:
 		page = await self.get_current_page()
 		await page.goto(url)
 		await page.wait_for_load_state()
+		
+		# ナビゲーション履歴を更新
+		await self._track_page_navigation(page, url)
 
 	async def refresh_page(self):
 		"""Refresh the current page"""
 		page = await self.get_current_page()
 		await page.reload()
 		await page.wait_for_load_state()
+		
+		# リロード後に履歴が正しく維持されていることを確認
+		page_id = await self._get_current_page_id(page)
+		if page_id >= 0 and page_id in self.state.page_histories:
+			position = self.state.page_history_positions[page_id]
+			if position >= 0 and position < len(self.state.page_histories[page_id]):
+				# 現在位置のURLとタイトルを更新（ページがリダイレクトされた場合に対応）
+				page_title = await page.title()
+				self.state.page_histories[page_id][position] = {"url": page.url, "title": page_title}
 
 	async def go_back(self):
 		"""Navigate back in history"""
 		page = await self.get_current_page()
-		try:
-			# 10 ms timeout
-			await page.go_back(timeout=10, wait_until='domcontentloaded')
-			# await self._wait_for_page_and_frames_load(timeout_overwrite=1.0)
-		except Exception as e:
-			# Continue even if its not fully loaded, because we wait later for the page to load
-			logger.debug(f'During go_back: {e}')
+		page_id = await self._get_current_page_id(page)
+		
+		# 独自の履歴管理を使用
+		if page_id in self.state.page_histories and await self._can_go_back(page_id):
+			# 現在の位置を一つ戻す
+			self.state.page_history_positions[page_id] -= 1
+			back_entry = self.state.page_histories[page_id][self.state.page_history_positions[page_id]]
+			back_url = back_entry["url"]
+			
+			try:
+				# 履歴内のURLに移動
+				await page.goto(back_url, wait_until='domcontentloaded')
+				logger.debug(f'Navigated back to: {back_url}')
+			except Exception as e:
+				logger.debug(f'Error during go_back: {e}')
+				# エラー時は元の位置に戻す
+				self.state.page_history_positions[page_id] += 1
+		else:
+			logger.debug('Cannot go back: no history available')
 
 	async def go_forward(self):
 		"""Navigate forward in history"""
 		page = await self.get_current_page()
-		try:
-			await page.go_forward(timeout=10, wait_until='domcontentloaded')
-		except Exception as e:
-			# Continue even if its not fully loaded, because we wait later for the page to load
-			logger.debug(f'During go_forward: {e}')
+		page_id = await self._get_current_page_id(page)
+		
+		# 独自の履歴管理を使用
+		if page_id in self.state.page_histories and await self._can_go_forward(page_id):
+			# 現在の位置を一つ進める
+			self.state.page_history_positions[page_id] += 1
+			forward_entry = self.state.page_histories[page_id][self.state.page_history_positions[page_id]]
+			forward_url = forward_entry["url"]
+			
+			try:
+				# 履歴内のURLに移動
+				await page.goto(forward_url, wait_until='domcontentloaded')
+				logger.debug(f'Navigated forward to: {forward_url}')
+			except Exception as e:
+				logger.debug(f'Error during go_forward: {e}')
+				# エラー時は元の位置に戻す
+				self.state.page_history_positions[page_id] -= 1
+		else:
+			logger.debug('Cannot go forward: no future history available')
 
 	async def close_current_tab(self):
 		"""Close the current tab"""
 		session = await self.get_session()
 		page = await self._get_current_page(session)
+		page_id = await self._get_current_page_id(page)
+		
+		# タブが閉じられる前に、そのタブの履歴情報をクリーンアップ
+		if page_id in self.state.page_histories:
+			del self.state.page_histories[page_id]
+		if page_id in self.state.page_history_positions:
+			del self.state.page_history_positions[page_id]
 		
 		# 閉じるページが最新ページの場合、リセット
 		if self._latest_page == page:
@@ -792,6 +899,21 @@ class BrowserContext:
 
 			screenshot_b64 = await self.take_screenshot()
 			pixels_above, pixels_below = await self.get_scroll_info(page)
+			
+			# 現在のページIDを取得
+			current_page_id = await self._get_current_page_id(page)
+			
+			# ナビゲーション可能かどうかを確認
+			can_go_back = await self._can_go_back(current_page_id)
+			can_go_forward = await self._can_go_forward(current_page_id)
+			
+			# ナビゲーション履歴の文字列化
+			navigation_history = ""
+			navigation_position = -1
+			if current_page_id in self.state.page_histories:
+				import json
+				navigation_history = json.dumps(self.state.page_histories[current_page_id])
+				navigation_position = self.state.page_history_positions.get(current_page_id, -1)
 
 			self.current_state = BrowserState(
 				element_tree=content.element_tree,
@@ -802,6 +924,10 @@ class BrowserContext:
 				screenshot=screenshot_b64,
 				pixels_above=pixels_above,
 				pixels_below=pixels_below,
+				can_go_back=can_go_back,
+				can_go_forward=can_go_forward,
+				navigation_history=navigation_history,
+				navigation_position=navigation_position,
 			)
 
 			return self.current_state
@@ -1218,6 +1344,12 @@ class BrowserContext:
 
 		# 最新ページを更新
 		self._latest_page = page
+		
+		# タブ切り替え後に現在のURLを履歴に追加（未追跡の場合のみ）
+		if page_id not in self.state.page_histories:
+			page_title = await page.title()
+			self.state.page_histories[page_id] = [{"url": page.url, "title": page_title}]
+			self.state.page_history_positions[page_id] = 0
 
 		await page.bring_to_front()
 		await page.wait_for_load_state()
@@ -1236,9 +1368,18 @@ class BrowserContext:
 		
 		await new_page.wait_for_load_state()
 
+		# 新しいタブにURLがある場合は履歴を初期化
+		new_page_id = await self._get_current_page_id(new_page)
+		if new_page_id >= 0:
+			self.state.page_histories[new_page_id] = []
+			self.state.page_history_positions[new_page_id] = -1
+
 		if url:
 			await new_page.goto(url)
 			await self._wait_for_page_and_frames_load(timeout_overwrite=1)
+			
+			# ナビゲーション履歴を更新
+			await self._track_page_navigation(new_page, url)
 
 		# Get target ID for new page if using CDP
 		if self.browser.config.cdp_url:

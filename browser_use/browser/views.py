@@ -25,6 +25,11 @@ class BrowserState(DOMState):
 	pixels_above: int = 0
 	pixels_below: int = 0
 	browser_errors: list[str] = field(default_factory=list)
+	# ナビゲーション履歴と位置情報を追加
+	can_go_back: bool = False
+	can_go_forward: bool = False
+	navigation_history: str = ""  # 現在のタブのナビゲーション履歴（JSON文字列）
+	navigation_position: int = -1  # 現在のナビゲーション位置
 
 
 @dataclass

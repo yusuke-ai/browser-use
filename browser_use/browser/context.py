@@ -1252,6 +1252,7 @@ class BrowserContext:
 		Optimized method to click an element using xpath.
 		"""
 		page = await self.get_current_page()
+		start_url = page.url  # クリック前のURLを記録
 
 		try:
 			# Highlight before clicking
@@ -1284,11 +1285,19 @@ class BrowserContext:
 						logger.debug('No download triggered within timeout. Checking navigation...')
 						await page.wait_for_load_state()
 						await self._check_and_handle_navigation(page)
+						
+						# ページ遷移が発生した場合は履歴を更新
+						if page.url != start_url:
+							await self._track_page_navigation(page, page.url)
 				else:
 					# Standard click logic if no download is expected
 					await click_func()
 					await page.wait_for_load_state()
 					await self._check_and_handle_navigation(page)
+					
+					# ページ遷移が発生した場合は履歴を更新
+					if page.url != start_url:
+						await self._track_page_navigation(page, page.url)
 
 			try:
 				return await perform_click(lambda: element_handle.click(timeout=1500))

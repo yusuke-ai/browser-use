@@ -233,20 +233,19 @@ class Controller(Generic[Context]):
 				# Step 3: Fallback — スクショを使って LLM に渡す
 				try:
 					screenshot_b64 = await browser.take_screenshot(full_page=True)
+					from langchain_core.messages import HumanMessage
+					messages = [
+						HumanMessage(
+						content=[
+							{
+								"type": "text",
+								"text": f"このページのスクリーンショットを見て、以下のゴールに関連する情報を抜き出してください。抽出ゴール: {goal}",
+							},
+							{"type": "image_url", "image_url": f"data:image/png;base64,{screenshot_b64}"},
+						])
+					]
 
-					screenshot_prompt = PromptTemplate(
-						input_variables=["goal", "screenshot_b64"],
-						template=(
-							"このページのスクリーンショットを見て、以下のゴールに関連する情報を抜き出してください。\n"
-							"スクリーンショットはbase64画像として提供されます。\n\n"
-							"抽出ゴール: {goal}\n\n"
-							"![screenshot](data:image/png;base64,{screenshot_b64})"
-						)
-					)
-
-					output = await page_extraction_llm.invoke(
-						screenshot_prompt.format(goal=goal, screenshot_b64=screenshot_b64)
-					)
+					output = await page_extraction_llm.invoke(messages)
 
 					msg = f'🖼️ Extracted from screenshot:\n{output.content}'
 					logger.info(msg)

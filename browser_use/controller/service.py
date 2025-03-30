@@ -173,6 +173,13 @@ class Controller(Generic[Context]):
 			msg = '🔙  Navigated back'
 			logger.info(msg)
 			return ActionResult(extracted_content=msg, include_in_memory=True)
+		
+		@self.registry.action('Go forward', param_model=NoParamsAction)
+		async def go_forward(_: NoParamsAction, browser: BrowserContext):
+			await browser.go_forward()
+			msg = '🔙  Navigated forward'
+			logger.info(msg)
+			return ActionResult(extracted_content=msg, include_in_memory=True)
 
 		# wait for x seconds
 		@self.registry.action('Wait for x seconds default 3')

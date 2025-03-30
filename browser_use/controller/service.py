@@ -32,20 +32,51 @@ from PyPDF2 import PdfReader
 
 logger = logging.getLogger(__name__)
 
+from langchain_core.messages import HumanMessage
+
+def build_messages_from_pdf(images_b64, goal):
+    messages = [
+        HumanMessage(
+            content=[
+                {
+                    "type": "text",
+                    "text": f"以下のPDFの画像（複数ページ）を見て、抽出ゴールに関係する情報を抜き出してください。\n\n抽出ゴール: {goal}"
+                }
+            ] + [
+                {
+                    "type": "image_url",
+                    "image_url": f"data:image/png;base64,{b64}"
+                } for b64 in images_b64
+            ]
+        )
+    ]
+    return messages
+
 import fitz  # = PyMuPDF
 from PIL import Image
 import io
 import base64
 
-def convert_pdf_to_images(pdf_path, max_size=1500):
+def convert_pdf_to_images(pdf_path, max_pages=None, max_size=1500):
+    """
+    PDFを画像化し、各ページをbase64 PNGとして返す。
+    
+    :param pdf_path: PDFファイルパス
+    :param max_pages: 最大ページ数（Noneなら全ページ）
+    :param max_size: 画像の長辺サイズ（ピクセル）
+    :return: base64 PNG画像のリスト（1ページにつき1つ）
+    """
     images_b64 = []
     doc = fitz.open(pdf_path)
 
-    for page in doc:
-        pix = page.get_pixmap(dpi=200)  # ← DPIで画質調整
+    for i, page in enumerate(doc):
+        if max_pages is not None and i >= max_pages:
+            break
+
+        pix = page.get_pixmap(dpi=200)  # 高品質に変換
         img = Image.open(io.BytesIO(pix.tobytes("png")))
 
-        # 長辺1500pxにリサイズ
+        # 長辺を max_size に収めるようにリサイズ
         w, h = img.size
         if w > h:
             new_w = max_size
@@ -55,7 +86,7 @@ def convert_pdf_to_images(pdf_path, max_size=1500):
             new_w = int(w * (max_size / h))
         img = img.resize((new_w, new_h), Image.LANCZOS)
 
-        # base64に変換
+        # base64エンコード
         buffered = io.BytesIO()
         img.save(buffered, format="PNG")
         img_b64 = base64.b64encode(buffered.getvalue()).decode("utf-8")
@@ -266,21 +297,10 @@ class Controller(Generic[Context]):
 				# Step 3: Fallback — スクショを使って LLM に渡す
 				try:
 					if is_pdf:
-						screenshot_b64 = convert_pdf_to_images(pdf_path)
+						images_base64 = convert_pdf_to_images(pdf_path)
 					else:
-						screenshot_b64 = await browser.take_screenshot(full_page=True)
-					from langchain_core.messages import HumanMessage
-					messages = [
-						HumanMessage(
-						content=[
-							{
-								"type": "text",
-								"text": f"このページのスクリーンショットを見て、以下のゴールに関連する情報を抜き出してください。抽出ゴール: {goal}",
-							},
-							{"type": "image_url", "image_url": f"data:image/png;base64,{screenshot_b64}"},
-						])
-					]
-
+						images_base64 = [await browser.take_screenshot(full_page=True)]
+					messages = build_messages_from_pdf(images_base64, goal)
 					output = page_extraction_llm.invoke(messages)
 
 					msg = f'🖼️ Extracted from screenshot:\n{output.content}'

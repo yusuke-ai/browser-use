@@ -1427,10 +1427,10 @@ class BrowserContext:
 				try:
 					# ページがまだ有効か確認するための簡単なテスト
 					await self._latest_page.evaluate('1')
-					logger.debug(f"Using tracked latest page: {self._latest_page.url}")
+					print(f"Using tracked latest page: {self._latest_page.url}")
 					return self._latest_page
 				except Exception as e:
-					logger.debug(f"Latest page is no longer accessible: {str(e)}")
+					print(f"Latest page is no longer accessible: {str(e)}")
 					self._latest_page = None  # リセット
 		
 		# CDP targetIDによるページ検出（オリジナルコード）
@@ -1446,7 +1446,7 @@ class BrowserContext:
 		# フォールバック：最後のページを使用
 		latest_page = pages[-1]
 		self._latest_page = latest_page  # 最新ページとして記録
-		logger.debug(f"Using last page from context: {latest_page.url}")
+		print(f"Using last page from context: {latest_page.url}")
 		return latest_page
 
 	async def get_selector_map(self) -> SelectorMap:

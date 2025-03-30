@@ -169,6 +169,8 @@ class BrowserContext:
 		# Initialize these as None - they'll be set up when needed
 		self.session: BrowserSession | None = None
 
+		self._latest_page = None
+
 	async def __aenter__(self):
 		"""Async context manager entry"""
 		await self._initialize_session()
@@ -284,12 +286,14 @@ class BrowserContext:
 
 		return self.session
 
-	def _add_new_page_listener(self, context: PlaywrightBrowserContext):
+	async def _add_new_page_listener(self, context: PlaywrightBrowserContext):
 		async def on_page(page: Page):
 			if self.browser.config.cdp_url:
 				await page.reload()  # Reload the page to avoid timeout errors
 			await page.wait_for_load_state()
 			logger.debug(f'New page opened: {page.url}')
+			# 新しいページを最新のページとして記録
+			self._latest_page = page
 			if self.session is not None:
 				self.state.target_id = None
 
@@ -651,12 +655,16 @@ class BrowserContext:
 		"""Close the current tab"""
 		session = await self.get_session()
 		page = await self._get_current_page(session)
+		
+		# 閉じるページが最新ページの場合、リセット
+		if self._latest_page == page:
+			self._latest_page = None
+			
 		await page.close()
 
 		# Switch to the first available tab if any exist
 		if session.context.pages:
 			await self.switch_to_tab(0)
-
 		# otherwise the browser will be closed
 
 	async def get_page_html(self) -> str:
@@ -1208,6 +1216,9 @@ class BrowserContext:
 					self.state.target_id = target['targetId']
 					break
 
+		# 最新ページを更新
+		self._latest_page = page
+
 		await page.bring_to_front()
 		await page.wait_for_load_state()
 
@@ -1219,6 +1230,10 @@ class BrowserContext:
 
 		session = await self.get_session()
 		new_page = await session.context.new_page()
+		
+		# 新しいページを最新として記録
+		self._latest_page = new_page
+		
 		await new_page.wait_for_load_state()
 
 		if url:
@@ -1237,19 +1252,45 @@ class BrowserContext:
 
 	# region - Helper methods for easier access to the DOM
 	async def _get_current_page(self, session: BrowserSession) -> Page:
+		"""
+		最新のページを追跡し返すように改良したメソッド
+		"""
 		pages = session.context.pages
-
-		# Try to find page by target ID if using CDP
+		
+		if not pages:
+			logger.debug("No pages found, creating a new page")
+			new_page = await session.context.new_page()
+			self._latest_page = new_page
+			return new_page
+		
+		# 既に記録された最新ページがあり、それがまだ有効な場合はそれを返す
+		if self._latest_page is not None:
+			# ページがまだコンテキスト内に存在するか確認
+			if self._latest_page in pages:
+				try:
+					# ページがまだ有効か確認するための簡単なテスト
+					await self._latest_page.evaluate('1', timeout=1000)
+					logger.debug(f"Using tracked latest page: {self._latest_page.url}")
+					return self._latest_page
+				except Exception as e:
+					logger.debug(f"Latest page is no longer accessible: {str(e)}")
+					self._latest_page = None  # リセット
+		
+		# CDP targetIDによるページ検出（オリジナルコード）
 		if self.browser.config.cdp_url and self.state.target_id:
 			targets = await self._get_cdp_targets()
 			for target in targets:
 				if target['targetId'] == self.state.target_id:
 					for page in pages:
 						if page.url == target['url']:
+							self._latest_page = page  # ページを記録
 							return page
-
-		# Fallback to last page
-		return pages[-1] if pages else await session.context.new_page()
+		
+		# フォールバック：最後のページを使用
+		latest_page = pages[-1]
+		self._latest_page = latest_page  # 最新ページとして記録
+		logger.debug(f"Using last page from context: {latest_page.url}")
+		return latest_page
 
 	async def get_selector_map(self) -> SelectorMap:
 		session = await self.get_session()

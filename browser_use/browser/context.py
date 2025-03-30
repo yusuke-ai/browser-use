@@ -342,14 +342,11 @@ class BrowserContext:
 		# 現在の履歴位置を取得
 		current_position = self.state.page_history_positions[page_id]
 		history = self.state.page_histories[page_id]
-		
-		print(history)
 
 		# 現在の位置が履歴の最後でない場合、先の履歴を削除
 		if 0 <= current_position < len(history) - 1:
 			self.state.page_histories[page_id] = history[:current_position + 1]
 
-		print(history)		
 		# 履歴エントリを作成
 		history_entry = {"url": url, "title": page_title}
 		
@@ -713,6 +710,8 @@ class BrowserContext:
 		page = await self.get_current_page()
 		page_id = await self._get_current_page_id(page)
 		
+		print("Histories", self.state.page_histories)
+
 		# 独自の履歴管理を使用
 		if page_id in self.state.page_histories and await self._can_go_back(page_id):
 			# 現在の位置を一つ戻す

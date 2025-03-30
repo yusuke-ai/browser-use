@@ -903,17 +903,20 @@ class BrowserContext:
 			# 現在のページIDを取得
 			current_page_id = await self._get_current_page_id(page)
 			
-			# ナビゲーション可能かどうかを確認
-			can_go_back = await self._can_go_back(current_page_id)
-			can_go_forward = await self._can_go_forward(current_page_id)
-			
-			# ナビゲーション履歴の文字列化
-			navigation_history = ""
-			navigation_position = -1
-			if current_page_id in self.state.page_histories:
-				import json
-				navigation_history = json.dumps(self.state.page_histories[current_page_id])
-				navigation_position = self.state.page_history_positions.get(current_page_id, -1)
+			navigation_data = {
+				"current_tab_id": current_page_id,
+				"tabs": {}
+			}
+
+			# 全タブの履歴情報を追加
+			for tab_id, history in self.state.page_histories.items():
+				position = self.state.page_history_positions.get(tab_id, -1)
+				navigation_data["tabs"][str(tab_id)] = {
+					"history": history,
+					"position": position
+				}
+
+			navigation_history = json.dumps(navigation_data)
 
 			self.current_state = BrowserState(
 				element_tree=content.element_tree,
@@ -924,10 +927,7 @@ class BrowserContext:
 				screenshot=screenshot_b64,
 				pixels_above=pixels_above,
 				pixels_below=pixels_below,
-				can_go_back=can_go_back,
-				can_go_forward=can_go_forward,
-				navigation_history=navigation_history,
-				navigation_position=navigation_position,
+				navigation_histories=navigation_history,
 			)
 
 			return self.current_state

@@ -32,6 +32,37 @@ from PyPDF2 import PdfReader
 
 logger = logging.getLogger(__name__)
 
+import fitz  # = PyMuPDF
+from PIL import Image
+import io
+import base64
+
+def convert_pdf_to_images(pdf_path, max_size=1500):
+    images_b64 = []
+    doc = fitz.open(pdf_path)
+
+    for page in doc:
+        pix = page.get_pixmap(dpi=200)  # ← DPIで画質調整
+        img = Image.open(io.BytesIO(pix.tobytes("png")))
+
+        # 長辺1500pxにリサイズ
+        w, h = img.size
+        if w > h:
+            new_w = max_size
+            new_h = int(h * (max_size / w))
+        else:
+            new_h = max_size
+            new_w = int(w * (max_size / h))
+        img = img.resize((new_w, new_h), Image.LANCZOS)
+
+        # base64に変換
+        buffered = io.BytesIO()
+        img.save(buffered, format="PNG")
+        img_b64 = base64.b64encode(buffered.getvalue()).decode("utf-8")
+        images_b64.append(img_b64)
+
+    return images_b64
+
 
 Context = TypeVar('Context')
 
@@ -194,10 +225,12 @@ class Controller(Generic[Context]):
 			import markdownify
 
 			# Step 1: ページのテキスト抽出
+			is_pdf = False
 			try:
-				pdf_content = await self.maybe_get_content_if_pdf(browser, page)
+				pdf_path, pdf_content = await self.maybe_get_content_if_pdf(browser, page)
 				if pdf_content is not None:
 					content = pdf_content
+					is_pdf = True
 				else:
 					content = markdownify.markdownify(await page.content())
 			except Exception as e:
@@ -232,7 +265,10 @@ class Controller(Generic[Context]):
 
 				# Step 3: Fallback — スクショを使って LLM に渡す
 				try:
-					screenshot_b64 = await browser.take_screenshot(full_page=True)
+					if is_pdf:
+						screenshot_b64 = convert_pdf_to_images(pdf_path)
+					else:
+						screenshot_b64 = await browser.take_screenshot(full_page=True)
 					from langchain_core.messages import HumanMessage
 					messages = [
 						HumanMessage(
@@ -245,7 +281,7 @@ class Controller(Generic[Context]):
 						])
 					]
 
-					output = await page_extraction_llm.invoke(messages)
+					output = page_extraction_llm.invoke(messages)
 
 					msg = f'🖼️ Extracted from screenshot:\n{output.content}'
 					logger.info(msg)
@@ -522,7 +558,7 @@ class Controller(Generic[Context]):
 
 	# Register ---------------------------------------------------------------
 
-	async def maybe_get_content_if_pdf(self, context, page) -> Optional[str]:
+	async def maybe_get_content_if_pdf(self, context, page):
 		# すでに開いているページのURLを取得
 		current_url = page.url
 		suggested_filename = current_url.split("/")[-1]
@@ -546,8 +582,8 @@ class Controller(Generic[Context]):
 				text = ''
 				for page in pdf.pages:
 					text += page.extract_text() or ''
-				return text
-		return None
+				return download_path, text
+		return None, None
 
 	def action(self, description: str, **kwargs):
 		"""Decorator for registering custom actions

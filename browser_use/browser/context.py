@@ -916,7 +916,7 @@ class BrowserContext:
 					"position": position
 				}
 
-			navigation_history = json.dumps(navigation_data)
+			navigation_history = json.dumps(navigation_data, ensure_ascii=False)
 
 			self.current_state = BrowserState(
 				element_tree=content.element_tree,
@@ -1297,7 +1297,10 @@ class BrowserContext:
 					
 					# ページ遷移が発生した場合は履歴を更新
 					if page.url != start_url:
+						print(f"Page URL changed from {start_url} to {page.url}")
 						await self._track_page_navigation(page, page.url)
+					else:
+						print(f"Page URL remains the same: {start_url}")
 
 			try:
 				return await perform_click(lambda: element_handle.click(timeout=1500))

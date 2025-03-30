@@ -52,7 +52,7 @@ def build_messages_from_pdf(images_b64, goal):
     ]
     return messages
 
-import fitz  # = PyMuPDF
+import pymupdf
 from PIL import Image
 import io
 import base64
@@ -67,7 +67,7 @@ def convert_pdf_to_images(pdf_path, max_pages=None, max_size=1500):
     :return: base64 PNG画像のリスト（1ページにつき1つ）
     """
     images_b64 = []
-    doc = fitz.open(pdf_path)
+    doc = pymupdf.open(pdf_path)
 
     for i, page in enumerate(doc):
         if max_pages is not None and i >= max_pages:

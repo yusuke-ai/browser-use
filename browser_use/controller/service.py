@@ -211,7 +211,7 @@ class Controller(Generic[Context]):
 				template=(
 					'You are given a webpage and a goal. Extract relevant content from the page in relation to the goal. '
 					'If the content is insufficient or the page is mostly empty (like logins, loaders, blank pages), '
-					'reply with: "__INSUFFICIENT_CONTENT__". Otherwise, respond in markdown.\n\n'
+					'you must reply with: "<INSUFFICIENT_CONTENT>". Otherwise, respond in markdown.\n\n'
 					'Goal: {goal}\n\nPage:\n{page}'
 				)
 			)
@@ -220,7 +220,7 @@ class Controller(Generic[Context]):
 				output = await page_extraction_llm.invoke(prompt_template.format(goal=goal, page=content))
 				extracted = output.content.strip()
 
-				if "__INSUFFICIENT_CONTENT__" in extracted:
+				if "<INSUFFICIENT_CONTENT>" in extracted:
 					raise ValueError("テキストに十分なコンテンツが含まれていないと判断されました。")
 
 				msg = f'📄 Extracted from text content:\n{extracted}'

@@ -1269,7 +1269,7 @@ class BrowserContext:
 			if self._latest_page in pages:
 				try:
 					# ページがまだ有効か確認するための簡単なテスト
-					await self._latest_page.evaluate('1', timeout=1000)
+					await self._latest_page.evaluate('1')
 					print(f"Using tracked latest page: {self._latest_page.url}")
 					return self._latest_page
 				except Exception as e:

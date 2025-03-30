@@ -316,13 +316,14 @@ class BrowserContext:
 		return await self._get_current_page(session)
 
 	async def _get_current_page_id(self, page: Page) -> int:
-		"""現在のページのIDを取得する"""
+		"""現在のページのIDを取得する。見つからなければ最新のタブのインデックスを返す"""
 		session = await self.get_session()
 		pages = session.context.pages
 		for i, p in enumerate(pages):
 			if p == page:
 				return i
-		# ページが見つからない場合は-1を返す
+		if pages:
+			return len(pages) - 1
 		return -1
 
 	async def _track_page_navigation(self, page: Page, url: str) -> None:
@@ -721,7 +722,9 @@ class BrowserContext:
 			
 			try:
 				# 履歴内のURLに移動
-				await page.goto(back_url, wait_until='domcontentloaded')
+				# await page.goto(back_url, wait_until='domcontentloaded')
+				await page.goto(back_url, wait_until='load')
+				await page.wait_for_load_state('networkidle')
 				logger.debug(f'Navigated back to: {back_url}')
 			except Exception as e:
 				logger.debug(f'Error during go_back: {e}')

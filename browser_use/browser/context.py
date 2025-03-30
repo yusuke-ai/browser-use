@@ -1299,10 +1299,10 @@ class BrowserContext:
 					
 					# ページ遷移が発生した場合は履歴を更新
 					if page.url != start_url:
-						print(f"Page URL changed from {start_url} to {page.url}")
+						print(f"Page URL changed from {start_url} to {page.url}", flush=True)
 						await self._track_page_navigation(page, page.url)
 					else:
-						print(f"Page URL remains the same: {start_url}")
+						print(f"Page URL remains the same: {start_url}", flush=True)
 
 			try:
 				return await perform_click(lambda: element_handle.click(timeout=1500))

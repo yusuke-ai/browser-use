@@ -221,7 +221,7 @@ class Controller(Generic[Context]):
 					new_tab_msg = 'New tab opened - switching to it'
 					msg += f' - {new_tab_msg}'
 					logger.info(new_tab_msg)
-					await browser.switch_to_tab(-1)
+					await browser.switch_to_tab(len(session.context.pages) - 1)
 				return ActionResult(extracted_content=msg, include_in_memory=True)
 			except Exception as e:
 				logger.warning(f'Element not clickable with index {params.index} - most likely the page changed')

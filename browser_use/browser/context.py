@@ -322,8 +322,6 @@ class BrowserContext:
 		for i, p in enumerate(pages):
 			if p == page:
 				return i
-		if pages:
-			return len(pages) - 1
 		return -1
 
 	async def _track_page_navigation(self, page: Page, url: str) -> None:

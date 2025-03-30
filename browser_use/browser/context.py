@@ -343,10 +343,13 @@ class BrowserContext:
 		current_position = self.state.page_history_positions[page_id]
 		history = self.state.page_histories[page_id]
 		
+		print(history)
+
 		# 現在の位置が履歴の最後でない場合、先の履歴を削除
 		if 0 <= current_position < len(history) - 1:
 			self.state.page_histories[page_id] = history[:current_position + 1]
-		
+
+		print(history)		
 		# 履歴エントリを作成
 		history_entry = {"url": url, "title": page_title}
 		

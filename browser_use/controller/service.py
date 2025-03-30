@@ -143,8 +143,13 @@ class Controller(Generic[Context]):
 		)
 		async def search_google(params: SearchGoogleAction, browser: BrowserContext):
 			page = await browser.get_current_page()
-			await page.goto(f'https://www.google.com/search?q={params.query}&udm=14')
+			search_url = f'https://www.google.com/search?q={params.query}&udm=14'
+			await page.goto(search_url)
 			await page.wait_for_load_state()
+			
+			# Add this line to update the navigation history
+			await browser._track_page_navigation(page, search_url)
+			
 			msg = f'🔍  Searched for "{params.query}" in Google'
 			logger.info(msg)
 			return ActionResult(extracted_content=msg, include_in_memory=True)
@@ -154,6 +159,10 @@ class Controller(Generic[Context]):
 			page = await browser.get_current_page()
 			await page.goto(params.url)
 			await page.wait_for_load_state()
+			
+			# Add this line to update the navigation history
+			await browser._track_page_navigation(page, params.url)
+			
 			msg = f'🔗  Navigated to {params.url}'
 			logger.info(msg)
 			return ActionResult(extracted_content=msg, include_in_memory=True)

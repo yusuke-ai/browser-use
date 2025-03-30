@@ -253,7 +253,7 @@ class Controller(Generic[Context]):
 
 				except Exception as e:
 					logger.error(f'Failed to extract from screenshot: {e} (content={content})')
-					return ActionResult(extracted_content="❌ Failed to extract content from both text and screenshot.")
+					return ActionResult(extracted_content=f"❌ Failed to extract content from both text and screenshot. {e} (content={content}")
 
 		@self.registry.action(
 			'Scroll down the page by pixel amount - if no amount is specified, scroll down one page',

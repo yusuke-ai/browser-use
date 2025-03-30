@@ -1270,10 +1270,10 @@ class BrowserContext:
 				try:
 					# ページがまだ有効か確認するための簡単なテスト
 					await self._latest_page.evaluate('1')
-					print(f"Using tracked latest page: {self._latest_page.url}")
+					logger.debug(f"Using tracked latest page: {self._latest_page.url}")
 					return self._latest_page
 				except Exception as e:
-					print(f"Latest page is no longer accessible: {str(e)}")
+					logger.debug(f"Latest page is no longer accessible: {str(e)}")
 					self._latest_page = None  # リセット
 		
 		# CDP targetIDによるページ検出（オリジナルコード）

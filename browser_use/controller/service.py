@@ -187,12 +187,13 @@ class Controller(Generic[Context]):
 
 		# Content Actions
 		@self.registry.action(
-			'Extract page content to retrieve specific information from the page, e.g. all company names, a specifc description, all information about, links with companies in structured format or simply links',
+			'Extract page content to retrieve specific information from the page, e.g. all company names, a specifc description, all information about, links with companies in structured format or simply links。画像の解析もできますので、建物の外観とか食べ物の外観とかもページから調べてもらってください。',
 		)
 		async def extract_content(goal: str, browser: BrowserContext, page_extraction_llm: BaseChatModel):
 			page = await browser.get_current_page()
 			import markdownify
 
+			# Step 1: ページのテキスト抽出
 			try:
 				pdf_content = await self.maybe_get_content_if_pdf(browser, page)
 				if pdf_content is not None:
@@ -202,21 +203,58 @@ class Controller(Generic[Context]):
 			except Exception as e:
 				import traceback
 				traceback.print_exc()
+				content = ""
 
-			print("content", content)
+			# Step 2: テキストを使って LLM にコンテンツ抽出させる
+			prompt_template = PromptTemplate(
+				input_variables=['goal', 'page'],
+				template=(
+					'You are given a webpage and a goal. Extract relevant content from the page in relation to the goal. '
+					'If the content is insufficient or the page is mostly empty (like logins, loaders, blank pages), '
+					'reply with: "__INSUFFICIENT_CONTENT__". Otherwise, respond in markdown.\n\n'
+					'Goal: {goal}\n\nPage:\n{page}'
+				)
+			)
 
-			prompt = 'Your task is to extract the content of the page. You will be given a page and a goal and you should extract all relevant information around this goal from the page. If the goal is vague, summarize the page. 足りないよりは多すぎるほうがいいので、ゴールが曖昧なときは広く情報を集める方向に解釈してください。Respond in markdown format. Extraction goal: {goal}, Page: {page}'
-			template = PromptTemplate(input_variables=['goal', 'page'], template=prompt)
 			try:
-				output = page_extraction_llm.invoke(template.format(goal=goal, page=content))
-				msg = f'📄  Extracted from page\n: {output.content}\n'
+				output = await page_extraction_llm.invoke(prompt_template.format(goal=goal, page=content))
+				extracted = output.content.strip()
+
+				if "__INSUFFICIENT_CONTENT__" in extracted:
+					raise ValueError("テキストに十分なコンテンツが含まれていないと判断されました。")
+
+				msg = f'📄 Extracted from text content:\n{extracted}'
 				logger.info(msg)
 				return ActionResult(extracted_content=msg, include_in_memory=True)
+
 			except Exception as e:
-				logger.debug(f'Error extracting content: {e}')
-				msg = f'📄  Extracted from page\n: {content}\n'
-				logger.info(msg)
-				return ActionResult(extracted_content=msg)
+				logger.warning(f'Text content insufficient or error occurred: {e}')
+
+				# Step 3: Fallback — スクショを使って LLM に渡す
+				try:
+					screenshot_b64 = await browser.take_screenshot(full_page=True)
+
+					screenshot_prompt = PromptTemplate(
+						input_variables=["goal", "screenshot_b64"],
+						template=(
+							"このページのスクリーンショットを見て、以下のゴールに関連する情報を抜き出してください。\n"
+							"スクリーンショットはbase64画像として提供されます。\n\n"
+							"抽出ゴール: {goal}\n\n"
+							"![screenshot](data:image/png;base64,{screenshot_b64})"
+						)
+					)
+
+					output = await page_extraction_llm.invoke(
+						screenshot_prompt.format(goal=goal, screenshot_b64=screenshot_b64)
+					)
+
+					msg = f'🖼️ Extracted from screenshot:\n{output.content}'
+					logger.info(msg)
+					return ActionResult(extracted_content=msg, include_in_memory=True)
+
+				except Exception as e:
+					logger.error(f'Failed to extract from screenshot: {e} (content={content})')
+					return ActionResult(extracted_content="❌ Failed to extract content from both text and screenshot.")
 
 		@self.registry.action(
 			'Scroll down the page by pixel amount - if no amount is specified, scroll down one page',

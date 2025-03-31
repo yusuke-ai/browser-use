@@ -40,7 +40,7 @@ def build_messages_from_pdf(images_b64, goal):
             content=[
                 {
                     "type": "text",
-                    "text": f"以下のPDFの画像（複数ページ）を見て、抽出ゴールに関係する情報を抜き出してください。\n\n抽出ゴール: {goal}"
+                    "text": f"以下のPDFの画像（複数ページ）を見て、抽出ゴールに関係する情報を抜き出してください。「Webページから情報を抽出しました」という形で報告してください。\n\n抽出ゴール: {goal}"
                 }
             ] + [
                 {
@@ -319,13 +319,13 @@ class Controller(Generic[Context]):
 					messages = build_messages_from_pdf(images_base64, goal)
 					output = page_extraction_llm.invoke(messages)
 
-					msg = f'🖼️ Extracted from screenshot:\n{output.content}'
+					msg = f'🖼️ Webサイトを解析して得られた解析結果：\n{output.content}'
 					logger.info(msg)
 					return ActionResult(extracted_content=msg, include_in_memory=True)
 
 				except Exception as e:
 					logger.error(f'Failed to extract from screenshot: {e} (content={content})')
-					return ActionResult(extracted_content=f"❌ Failed to extract content from both text and screenshot. {e} (content={content}")
+					return ActionResult(extracted_content=f"❌ Failed to extract content from the web page {e} (content={content}")
 
 		@self.registry.action(
 			'Scroll down the page by pixel amount - if no amount is specified, scroll down one page',

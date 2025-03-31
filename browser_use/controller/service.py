@@ -190,7 +190,7 @@ class Controller(Generic[Context]):
 			return ActionResult(extracted_content=msg, include_in_memory=True)
 
 		# Element Interaction Actions
-		@self.registry.action('Click element。labelは必須項目なので、絶対に入れてください。', param_model=ClickElementAction)
+		@self.registry.action('Click element', param_model=ClickElementAction)
 		async def click_element(params: ClickElementAction, browser: BrowserContext):
 			session = await browser.get_session()
 

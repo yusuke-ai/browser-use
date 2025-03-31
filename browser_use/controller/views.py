@@ -14,7 +14,6 @@ class GoToUrlAction(BaseModel):
 
 class ClickElementAction(BaseModel):
 	index: int
-	label: str
 	xpath: Optional[str] = None
 
 

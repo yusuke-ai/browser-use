@@ -265,7 +265,7 @@ class Controller(Generic[Context]):
 
 		# Content Actions
 		@self.registry.action(
-			'Extract page content to retrieve specific information from the page, e.g. all company names, a specifc description, all information about, links with companies in structured format or simply links。画像の解析もできますので、建物の外観とか食べ物の外観とかもページから調べてもらってください。',
+			'Extract page content to retrieve specific information from the page, e.g. all company names, a specifc description, all information about, links with companies in structured format or simply links。画像やPDFの解析もできますので、建物の外観とか食べ物の外観とかもページから調べてもらってください。',
 		)
 		async def extract_content(goal: str, browser: BrowserContext, page_extraction_llm: BaseChatModel):
 			page = await browser.get_current_page()

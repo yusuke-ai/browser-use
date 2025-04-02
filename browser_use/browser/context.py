@@ -14,7 +14,7 @@ import uuid
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Optional, TypedDict
 
-from browser_use import domain_handler
+from browser_use.domain_handler import DomainHandler
 from playwright._impl._errors import TimeoutError
 from playwright.async_api import Browser as PlaywrightBrowser
 from playwright.async_api import (
@@ -175,6 +175,12 @@ class BrowserContext:
 		self.session: BrowserSession | None = None
 
 		self._latest_page = None
+		
+		self.domain_handler = DomainHandler()	
+
+	def get_domain_handler(self):
+		"""Get the domain handler"""
+		return self.domain_handler
 
 	async def __aenter__(self):
 		"""Async context manager entry"""
@@ -356,7 +362,7 @@ class BrowserContext:
 			self.state.page_history_positions[page_id] = len(self.state.page_histories[page_id]) - 1
 			
 			# Domain handler check and execution
-			await domain_handler.check_and_execute(self)
+			await self.domain_handler.check_and_execute(self)
 		
 		logger.debug(f'Updated navigation history for page {page_id}: {self.state.page_histories[page_id]}')
 		logger.debug(f'Current position: {self.state.page_history_positions[page_id]}')

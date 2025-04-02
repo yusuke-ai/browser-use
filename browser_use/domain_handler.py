@@ -3,7 +3,6 @@ import logging
 from typing import Dict, Callable, Any
 from urllib.parse import urlparse
 
-from browser_use.browser.context import BrowserContext
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +18,7 @@ class DomainHandler:
         # Set to track domains that have already been processed
         self.processed_domains: set = set()
         
-    def register(self, domain_pattern: str, handler: Callable[[BrowserContext], Any]):
+    def register(self, domain_pattern: str, handler):
         """
         Register a handler function for a specific domain pattern.
         
@@ -59,7 +58,7 @@ class DomainHandler:
             logger.error(f"Error finding handler for URL {url}: {str(e)}")
             return None
             
-    def check_and_execute(self, browser: BrowserContext) -> None:
+    def check_and_execute(self, browser) -> None:
         """
         Check if the current page's domain has a registered handler and execute it
         if it hasn't been processed yet.

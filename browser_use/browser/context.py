@@ -14,6 +14,7 @@ import uuid
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Optional, TypedDict
 
+from browser_use import domain_handler
 from playwright._impl._errors import TimeoutError
 from playwright.async_api import Browser as PlaywrightBrowser
 from playwright.async_api import (
@@ -353,6 +354,9 @@ class BrowserContext:
 		if not history or history[-1]["url"] != url:
 			self.state.page_histories[page_id].append(history_entry)
 			self.state.page_history_positions[page_id] = len(self.state.page_histories[page_id]) - 1
+			
+			# Domain handler check and execution
+			await domain_handler.check_and_execute(self)
 		
 		logger.debug(f'Updated navigation history for page {page_id}: {self.state.page_histories[page_id]}')
 		logger.debug(f'Current position: {self.state.page_history_positions[page_id]}')

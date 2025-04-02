@@ -738,6 +738,7 @@ class BrowserContext:
 				logger.debug(f'Error during go_back: {e}')
 				# エラー時は元の位置に戻す
 				self.state.page_history_positions[page_id] += 1
+				raise
 		else:
 			logger.debug('Cannot go back: no history available')
 
@@ -762,6 +763,7 @@ class BrowserContext:
 				logger.debug(f'Error during go_forward: {e}')
 				# エラー時は元の位置に戻す
 				self.state.page_history_positions[page_id] -= 1
+				raise
 		else:
 			logger.debug('Cannot go forward: no future history available')
 

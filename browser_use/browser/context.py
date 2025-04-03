@@ -1224,44 +1224,81 @@ class BrowserContext:
 		"""
 		Input text into an element with proper error handling and state management.
 		Handles different types of input fields and ensures proper element state before input.
+		Uses fill() for <input> elements for reliable clearing and input.
 		"""
+		element_handle = None # エラーメッセージ用に初期化
 		try:
-			# Highlight before typing
-			# if element_node.highlight_index is not None:
-			# 	await self._update_state(focus_element=element_node.highlight_index)
-
 			element_handle = await self.get_locate_element(element_node)
 
 			if element_handle is None:
 				raise BrowserError(f'Element: {repr(element_node)} not found')
 
-			# Ensure element is ready for input
+			# Ensure element is ready for input (Wait and Scroll)
 			try:
-				await element_handle.wait_for_element_state('stable', timeout=1000)
+				# 要素が表示され、有効になるまで少し待つ (タイムアウトは短めに設定)
+				await element_handle.wait_for_element_state('visible', timeout=2000)
+				await element_handle.wait_for_element_state('enabled', timeout=2000)
 				await element_handle.scroll_into_view_if_needed(timeout=1000)
-			except Exception:
-				pass
+			except TimeoutError as e:
+				logger.warning(f"Timeout waiting for element state or scrolling: {e}. Proceeding anyway.")
+			except Exception as e:
+				# 他の予期せぬエラー（要素が見つからないなど）はここで捕捉される可能性
+				logger.warning(f"Error during element state check/scroll: {e}. Proceeding anyway.")
+				# ここで raise せず、後続の処理を試みる
 
-			# Get element properties to determine input method
+			# Get element properties
 			tag_handle = await element_handle.get_property("tagName")
 			tag_name = (await tag_handle.json_value()).lower()
-			is_contenteditable = await element_handle.get_property('isContentEditable')
+			is_contenteditable_handle = await element_handle.get_property('isContentEditable')
+			is_contenteditable = await is_contenteditable_handle.json_value() if is_contenteditable_handle else False
 			readonly_handle = await element_handle.get_property("readOnly")
-			disabled_handle = await element_handle.get_property("disabled")
-
 			readonly = await readonly_handle.json_value() if readonly_handle else False
+			disabled_handle = await element_handle.get_property("disabled")
 			disabled = await disabled_handle.json_value() if disabled_handle else False
 
-			if (await is_contenteditable.json_value() or tag_name == 'input') and not (readonly or disabled):
-				await element_handle.evaluate('el => el.textContent = ""')
-				await element_handle.type(text, delay=5)
-			else:
+			# --- 修正箇所 ---
+			# input 要素の場合、fill を使用する
+			if tag_name == 'input' and not (readonly or disabled):
+				logger.debug(f"Using fill() for input element (index: {element_node.highlight_index})")
+				# fill は内部的にクリアしてから入力する
 				await element_handle.fill(text)
+			# contentEditable 要素の場合、従来の evaluate + type を使う
+			elif is_contenteditable and not (readonly or disabled):
+				logger.debug(f"Using evaluate+type for contentEditable element (index: {element_node.highlight_index})")
+				await element_handle.evaluate('el => el.textContent = ""')
+				await element_handle.type(text, delay=5) # 必要に応じて delay 調整
+			# 上記以外 (textarea など) の場合も fill を試す
+			elif not (readonly or disabled):
+				logger.debug(f"Using fill() for other editable element: {tag_name} (index: {element_node.highlight_index})")
+				try:
+					await element_handle.fill(text)
+				except Exception as fill_error:
+					# fill が失敗した場合 (例: 非対応要素)、type を試す価値はあるか？
+					# 通常、input/textarea/contentEditable以外は入力できないことが多い
+					logger.error(f"fill() failed for element {tag_name} (index: {element_node.highlight_index}): {fill_error}. Input might not be supported.")
+					raise BrowserError(f'Failed to input text into {tag_name} element (index: {element_node.highlight_index})') from fill_error
+			# 読み取り専用 or 無効
+			else:
+				logger.error(f"Element {element_node.highlight_index} ({tag_name}) is readonly or disabled.")
+				raise BrowserError(f'Element {element_node.highlight_index} ({tag_name}) is not interactable (readonly or disabled)')
+			# --- 修正箇所ここまで ---
 
 		except Exception as e:
-			logger.debug(f'Failed to input text into element: {repr(element_node)}. Error: {str(e)}')
-			raise BrowserError(f'Failed to input text into index {element_node.highlight_index}')
+			# エラーメッセージに element_handle の情報を含める (取得できていれば)
+			element_repr = repr(element_node)
+			if element_handle:
+				try:
+					outer_html = await element_handle.evaluate('el => el.outerHTML')
+					element_repr = outer_html[:150] + ('...' if len(outer_html) > 150 else '') # 長すぎる場合に省略
+				except Exception:
+					pass # outerHTML取得失敗は無視
 
+			logger.error(f'Failed to input text into element: {element_repr}. Error: {str(e)}', exc_info=True) # スタックトレースも出力
+			# エラータイプに応じてより具体的なメッセージを出すことも検討
+			if isinstance(e, BrowserError): # 既にBrowserErrorならそのままraise
+				raise e
+			else: # それ以外はBrowserErrorでラップ
+				raise BrowserError(f'Failed to input text into index {element_node.highlight_index}: {e}') from e
 	@time_execution_async('--click_element_node')
 	async def _click_element_node(self, element_node: DOMElementNode) -> tuple[Optional[str], bool]:
 		"""

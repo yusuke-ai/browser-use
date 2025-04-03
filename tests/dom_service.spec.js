@@ -224,3 +224,210 @@ test.describe('isTextNodeVisible_v4 in Browser Context', () => {
      });
 
 });
+
+// --- 新しいテストスイート: Interactive Element Detection ---
+test.describe('Interactive Element Detection in Browser Context', () => {
+
+  // ヘルパー関数：インタラクティブ要素判定テスト用
+  async function runInteractivityTestInBrowser(page, html, targetSelector, expectedInteractive, styleContent = '') {
+    await page.setContent(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="UTF-8">
+        <title>Interactivity Test</title>
+        <style>${styleContent}</style>
+      </head>
+      <body>
+        <div id="test-container">${html}</div>
+      </body>
+      </html>
+    `);
+
+    // page.evaluate に buildDomTree.js から必要な関数定義とテストロジックを渡す
+    const isInteractive = await page.evaluate((selector) => {
+      // ▼▼▼ evaluate の中で buildDomTree.js の関数を定義 ▼▼▼
+      const DOM_CACHE = {
+        boundingRects: new WeakMap(),
+        computedStyles: new WeakMap(),
+        clearCache: () => {
+          DOM_CACHE.boundingRects = new WeakMap();
+          DOM_CACHE.computedStyles = new WeakMap();
+        }
+      };
+
+      function getCachedBoundingRect(element) {
+        if (!element) return null;
+        if (DOM_CACHE.boundingRects.has(element)) return DOM_CACHE.boundingRects.get(element);
+        const rect = element.getBoundingClientRect();
+        if (rect) DOM_CACHE.boundingRects.set(element, rect);
+        return rect;
+      }
+
+      function getCachedComputedStyle(element) {
+        if (!element) return null;
+        if (DOM_CACHE.computedStyles.has(element)) return DOM_CACHE.computedStyles.get(element);
+        const style = window.getComputedStyle(element);
+        if (style) DOM_CACHE.computedStyles.set(element, style);
+        return style;
+      }
+
+      function isElementVisible(element) {
+        // buildDomTree.js 内の isElementVisible の簡易版
+        if (!element || element.nodeType !== Node.ELEMENT_NODE) return false;
+        try {
+            const style = getCachedComputedStyle(element);
+            return (
+              element.offsetWidth > 0 &&
+              element.offsetHeight > 0 &&
+              style?.visibility !== "hidden" &&
+              style?.display !== "none"
+            );
+        } catch(e) { return false; }
+      }
+
+      function isTopElement(element) {
+         // buildDomTree.js 内の isTopElement の簡易版
+        if (!element || element.nodeType !== Node.ELEMENT_NODE) return false;
+        try {
+            const rect = getCachedBoundingRect(element);
+            if (!rect || rect.width === 0 || rect.height === 0) return false;
+            const centerX = rect.left + rect.width / 2;
+            const centerY = rect.top + rect.height / 2;
+            // ビューポート外チェックは省略 (テスト環境依存を減らすため)
+            let topEl = document.elementFromPoint(centerX, centerY);
+            if (!topEl) return false;
+            let current = topEl;
+            while (current) {
+              if (current === element) return true;
+              current = current.parentElement;
+            }
+            return false;
+        } catch (e) { return true; } // エラー時は true (元の挙動に合わせる)
+      }
+
+      function isInteractiveElement(element) {
+        // buildDomTree.js からコピー＆ペースト (最新版)
+        if (!element || element.nodeType !== Node.ELEMENT_NODE) {
+          return false;
+        }
+        const isCookieBannerElement = (typeof element.closest === 'function') && (element.closest('[id*="onetrust"]') || element.closest('[class*="onetrust"]') || element.closest('[data-nosnippet="true"]') || element.closest('[aria-label*="cookie"]'));
+        if (isCookieBannerElement) { if (element.tagName.toLowerCase() === 'button' || element.getAttribute('role') === 'button' || element.onclick || element.getAttribute('onclick') || (element.classList && (element.classList.contains('ot-sdk-button') || element.classList.contains('accept-button') || element.classList.contains('reject-button'))) || element.getAttribute('aria-label')?.toLowerCase().includes('accept') || element.getAttribute('aria-label')?.toLowerCase().includes('reject')) { return true; } }
+        const interactiveElements = new Set(["a", "button", "details", "embed", "input", "menu", "menuitem", "object", "select", "textarea", "canvas", "summary", "dialog", "banner"]);
+        const interactiveRoles = new Set(['button-icon', 'dialog', 'button-text-icon-only', 'treeitem', 'alert', 'grid', 'progressbar', 'radio', 'checkbox', 'menuitem', 'option', 'switch', 'dropdown', 'scrollbar', 'combobox', 'a-button-text', 'button', 'region', 'textbox', 'tabpanel', 'tab', 'click', 'button-text', 'spinbutton', 'a-button-inner', 'link', 'menu', 'slider', 'listbox', 'a-dropdown-button', 'button-icon-only', 'searchbox', 'menuitemradio', 'tooltip', 'tree', 'menuitemcheckbox']);
+        const tagName = element.tagName.toLowerCase(); const role = element.getAttribute("role"); const ariaRole = element.getAttribute("aria-role"); const tabIndex = element.getAttribute("tabindex");
+        const hasAddressInputClass = element.classList && (element.classList.contains("address-input__container__input") || element.classList.contains("nav-btn") || element.classList.contains("pull-left"));
+        if (element.classList && (element.classList.contains('dropdown-toggle') || element.getAttribute('data-toggle') === 'dropdown' || element.getAttribute('aria-haspopup') === 'true')) { return true; }
+        const hasInteractiveRole = hasAddressInputClass || interactiveElements.has(tagName) || interactiveRoles.has(role) || interactiveRoles.has(ariaRole) || (tabIndex !== null && (tagName === "a" || tabIndex !== "-1") && element.parentElement?.tagName.toLowerCase() !== "body") || element.getAttribute("data-action") === "a-dropdown-select" || element.getAttribute("data-action") === "a-dropdown-button";
+        if (hasInteractiveRole) return true;
+        const isCookieBanner = element.id?.toLowerCase().includes('cookie') || element.id?.toLowerCase().includes('consent') || element.id?.toLowerCase().includes('notice') || (element.classList && (element.classList.contains('otCenterRounded') || element.classList.contains('ot-sdk-container'))) || element.getAttribute('data-nosnippet') === 'true' || element.getAttribute('aria-label')?.toLowerCase().includes('cookie') || element.getAttribute('aria-label')?.toLowerCase().includes('consent') || (element.tagName.toLowerCase() === 'div' && (element.id?.includes('onetrust') || (element.classList && (element.classList.contains('onetrust') || element.classList.contains('cookie') || element.classList.contains('consent')))));
+        if (isCookieBanner) return true;
+        const isInCookieBanner = typeof element.closest === 'function' && element.closest('[id*="cookie"],[id*="consent"],[class*="cookie"],[class*="consent"],[id*="onetrust"]');
+        if (isInCookieBanner && (element.tagName.toLowerCase() === 'button' || element.getAttribute('role') === 'button' || (element.classList && element.classList.contains('button')) || element.onclick || element.getAttribute('onclick'))) { return true; }
+        const hasClickHandler = element.onclick !== null || element.getAttribute("onclick") !== null || element.hasAttribute("ng-click") || element.hasAttribute("@click") || element.hasAttribute("v-on:click");
+        function getEventListeners(el) { try { return window.getEventListeners?.(el) || {}; } catch (e) { const listeners = {}; const eventTypes = ["click", "mousedown", "mouseup", "touchstart", "touchend", "keydown", "keyup", "focus", "blur"]; for (const type of eventTypes) { const handler = el[`on${type}`]; if (handler) { listeners[type] = [{ listener: handler, useCapture: false }]; } } return listeners; } }
+        const listeners = getEventListeners(element); const hasClickListeners = listeners && (listeners.click?.length > 0 || listeners.mousedown?.length > 0 || listeners.mouseup?.length > 0 || listeners.touchstart?.length > 0 || listeners.touchend?.length > 0);
+        const hasAriaProps = element.hasAttribute("aria-expanded") || element.hasAttribute("aria-pressed") || element.hasAttribute("aria-selected") || element.hasAttribute("aria-checked");
+        const isContentEditable = element.getAttribute("contenteditable") === "true" || element.isContentEditable || element.id === "tinymce" || element.classList.contains("mce-content-body") || (element.tagName.toLowerCase() === "body" && element.getAttribute("data-id")?.startsWith("mce_"));
+        const isDraggable = element.draggable || element.getAttribute("draggable") === "true";
+        let hasPointerCursor = false; try { const style = getCachedComputedStyle(element); hasPointerCursor = style?.cursor === 'pointer'; } catch(e) {}
+        return (hasAriaProps || hasClickHandler || hasClickListeners || isDraggable || isContentEditable || hasPointerCursor);
+      }
+
+      // --- テスト対象の要素取得と判定ロジック ---
+      const element = document.querySelector(selector);
+      if (!element) throw new Error(`Target element not found with selector: ${selector}`);
+
+      // buildDomTree の判定ロジックを模倣
+      let isPotentiallyInteractiveViaLabel = false;
+      const isVisible = isElementVisible(element);
+      const tagNameLower = element.tagName.toLowerCase();
+
+      if (!isVisible && element.id && (tagNameLower === 'input' && (element.type === 'checkbox' || element.type === 'radio'))) {
+        const label = document.querySelector(`label[for="${element.id}"]`);
+        if (label) {
+          const labelVisible = isElementVisible(label);
+          const labelTop = isTopElement(label);
+          if (labelVisible && labelTop) {
+            isPotentiallyInteractiveViaLabel = true;
+          }
+        }
+      }
+
+      let isConsideredInteractive = false;
+      if (isVisible || isPotentiallyInteractiveViaLabel) {
+        const isTop = isTopElement(element);
+        if (isTop || isPotentiallyInteractiveViaLabel) {
+           isConsideredInteractive = isInteractiveElement(element);
+        }
+      }
+
+      return isConsideredInteractive;
+
+    }, targetSelector); // セレクタを引数として渡す
+
+    expect(isInteractive).toBe(expectedInteractive);
+  }
+
+  // --- 新しいテストケース ---
+  test('should consider standard button interactive', async ({ page }) => {
+    const html = '<button id="target">Click Me</button>';
+    await runInteractivityTestInBrowser(page, html, '#target', true);
+  });
+
+  test('should consider standard link interactive', async ({ page }) => {
+    const html = '<a href="#" id="target">Click Me</a>';
+    await runInteractivityTestInBrowser(page, html, '#target', true);
+  });
+
+  test('should consider div with cursor:pointer interactive', async ({ page }) => {
+    const html = '<div id="target" style="cursor: pointer; width: 50px; height: 20px; border: 1px solid black;">Clickable Div</div>';
+    await runInteractivityTestInBrowser(page, html, '#target', true);
+  });
+
+   test('should NOT consider plain div interactive', async ({ page }) => {
+    const html = '<div id="target" style="width: 50px; height: 20px; border: 1px solid black;">Plain Div</div>';
+    await runInteractivityTestInBrowser(page, html, '#target', false);
+  });
+
+  test('should consider hidden checkbox with visible label interactive', async ({ page }) => {
+    const style = `
+        #target-check { opacity: 0; position: absolute; height: 0; width: 0; } /* Hide checkbox */
+        #target-label { display: inline-block; cursor: pointer; padding: 5px; border: 1px solid green; } /* Visible label */
+    `;
+    const html = `
+        <input type="checkbox" id="target-check" name="test">
+        <label for="target-check" id="target-label">Click Label</label>
+    `;
+    // チェックボックス自体 (#target-check) がインタラクティブと判定されるかをテスト
+    await runInteractivityTestInBrowser(page, html, '#target-check', true, style);
+  });
+
+  test('should NOT consider hidden checkbox with hidden label interactive', async ({ page }) => {
+    const style = `
+        #target-check { opacity: 0; position: absolute; height: 0; width: 0; }
+        #target-label { display: none; } /* Hide label too */
+    `;
+    const html = `
+        <input type="checkbox" id="target-check" name="test">
+        <label for="target-check" id="target-label">Click Label</label>
+    `;
+    await runInteractivityTestInBrowser(page, html, '#target-check', false, style);
+  });
+
+   test('should consider visible checkbox interactive', async ({ page }) => {
+    const html = '<input type="checkbox" id="target"> Visible Checkbox';
+    await runInteractivityTestInBrowser(page, html, '#target', true);
+  });
+
+  test('should consider div with role=button interactive', async ({ page }) => {
+    const html = '<div role="button" id="target" style="width: 50px; height: 20px; border: 1px solid black;">Div Button</div>';
+    await runInteractivityTestInBrowser(page, html, '#target', true);
+  });
+
+  test('should consider element with click handler interactive', async ({ page }) => {
+    const html = '<div id="target" onclick="alert(\'clicked\')" style="width: 50px; height: 20px; border: 1px solid black;">Click Handler</div>';
+    await runInteractivityTestInBrowser(page, html, '#target', true);
+  });
+
+});

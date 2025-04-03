@@ -695,12 +695,20 @@
     const isDraggable =
       element.draggable || element.getAttribute("draggable") === "true";
 
+    // Check cursor style as a fallback
+    let hasPointerCursor = false;
+    try {
+        const style = getCachedComputedStyle(element); // Use cached style
+        hasPointerCursor = style?.cursor === 'pointer';
+    } catch(e) { /* ignore */ }
+
     return (
       hasAriaProps ||
       hasClickHandler ||
       hasClickListeners ||
       isDraggable ||
-      isContentEditable
+      isContentEditable ||
+      hasPointerCursor // Add cursor check here
     );
   }
 
@@ -955,27 +963,60 @@
 
     // if (isInteractiveCandidate(node)) {
 
-    // Check interactivity
+    // Check interactivity and visibility
     if (node.nodeType === Node.ELEMENT_NODE) {
+      let isPotentiallyInteractiveViaLabel = false;
       nodeData.isVisible = isElementVisible(node);
-      if (nodeData.isVisible) {
-        nodeData.isTopElement = isTopElement(node);
-        if (nodeData.isTopElement) {
-          nodeData.isInteractive = isInteractiveElement(node);
-          if (nodeData.isInteractive) {
-            nodeData.isInViewport = true;
-            nodeData.highlightIndex = highlightIndex++;
 
-            if (doHighlightElements) {
-              if (focusHighlightIndex >= 0) {
-                if (focusHighlightIndex === nodeData.highlightIndex) {
-                  highlightElement(node, nodeData.highlightIndex, parentIframe);
-                }
-              } else {
-                highlightElement(node, nodeData.highlightIndex, parentIframe);
-              }
-            }
+      // Checkbox/Radio special handling: Check label visibility if input is hidden
+      const tagNameLower = node.tagName.toLowerCase();
+      if (!nodeData.isVisible && node.id && (tagNameLower === 'input' && (node.type === 'checkbox' || node.type === 'radio'))) {
+        const label = document.querySelector(`label[for="${node.id}"]`);
+        if (label) {
+          // Use cached functions for label checks
+          const labelVisible = isElementVisible(label);
+          const labelTop = isTopElement(label);
+          if (labelVisible && labelTop) {
+            // Treat as potentially interactive if label is visible and top
+            isPotentiallyInteractiveViaLabel = true;
+            // console.log(`[buildDomTree] Input #${node.id} is hidden, but visible/top label found. Proceeding with checks.`);
           }
+        }
+      }
+
+      // Proceed with checks if element is visible OR it's a checkbox/radio with a visible/top label
+      if (nodeData.isVisible || isPotentiallyInteractiveViaLabel) {
+        // Check if the element itself (or its label) is the top element
+        nodeData.isTopElement = isTopElement(node);
+
+        // Allow check if element is top OR if label was visible/top
+        // Note: If label is visible/top but input is hidden *behind something else*, isTopElement(node) will be false.
+        // We proceed to check isInteractiveElement anyway if the label was good.
+        if (nodeData.isTopElement || isPotentiallyInteractiveViaLabel) {
+           // Run interactivity check on the input element itself
+           nodeData.isInteractive = isInteractiveElement(node);
+
+           // Highlight if interactive
+           if (nodeData.isInteractive) {
+             // Check if the element (input) is within the viewport for highlighting
+             // Use the potentially visible label's rect if the input itself is hidden? No, stick to input's rect.
+             nodeData.isInViewport = isInExpandedViewport(node, viewportExpansion);
+
+             if (nodeData.isInViewport) { // Only highlight if in viewport
+                nodeData.highlightIndex = highlightIndex++;
+                // Highlight the input element itself, even if triggered via label
+                const elementToHighlight = node;
+                if (doHighlightElements) {
+                  if (focusHighlightIndex >= 0) {
+                    if (focusHighlightIndex === nodeData.highlightIndex) {
+                      highlightElement(elementToHighlight, nodeData.highlightIndex, parentIframe);
+                    }
+                  } else {
+                    highlightElement(elementToHighlight, nodeData.highlightIndex, parentIframe);
+                  }
+                }
+             }
+           }
         }
       }
     }

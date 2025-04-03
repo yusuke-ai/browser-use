@@ -527,7 +527,7 @@
       interactiveRoles.has(role) ||
       interactiveRoles.has(ariaRole) ||
       (tabIndex !== null &&
-        tabIndex !== "-1" &&
+        (tagName === "a" || tabIndex !== "-1") &&
         element.parentElement?.tagName.toLowerCase() !== "body") ||
       element.getAttribute("data-action") === "a-dropdown-select" ||
       element.getAttribute("data-action") === "a-dropdown-button";

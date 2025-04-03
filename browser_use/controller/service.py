@@ -152,7 +152,7 @@ class Controller(Generic[Context]):
 			
 			msg = f'🔍  Searched for "{params.query}" in Google'
 			logger.info(msg)
-			return ActionResult(extracted_content=msg, include_in_memory=True)
+			return ActionResult(extracted_content=msg, include_in_memory=True, changed_to_new_page=True)
 
 		@self.registry.action('Navigate to URL in the current tab', param_model=GoToUrlAction)
 		async def go_to_url(params: GoToUrlAction, browser: BrowserContext):
@@ -165,21 +165,21 @@ class Controller(Generic[Context]):
 			
 			msg = f'🔗  Navigated to {params.url}'
 			logger.info(msg)
-			return ActionResult(extracted_content=msg, include_in_memory=True)
+			return ActionResult(extracted_content=msg, include_in_memory=True, changed_to_new_page=True)
 
 		@self.registry.action('Go back', param_model=NoParamsAction)
 		async def go_back(_: NoParamsAction, browser: BrowserContext):
 			await browser.go_back()
 			msg = '🔙  Navigated back'
 			logger.info(msg)
-			return ActionResult(extracted_content=msg, include_in_memory=True)
+			return ActionResult(extracted_content=msg, include_in_memory=True, changed_to_new_page=True)
 		
 		@self.registry.action('Go forward', param_model=NoParamsAction)
 		async def go_forward(_: NoParamsAction, browser: BrowserContext):
 			await browser.go_forward()
 			msg = '🔙  Navigated forward'
 			logger.info(msg)
-			return ActionResult(extracted_content=msg, include_in_memory=True)
+			return ActionResult(extracted_content=msg, include_in_memory=True, changed_to_new_page=True)
 
 		# wait for x seconds
 		@self.registry.action('Wait for x seconds default 3')
@@ -207,9 +207,9 @@ class Controller(Generic[Context]):
 				return ActionResult(extracted_content=msg, include_in_memory=True)
 
 			msg = None
-
+			page_changed = False
 			try:
-				download_path = await browser._click_element_node(element_node)
+				download_path, page_changed = await browser._click_element_node(element_node)
 				if download_path:
 					msg = f'💾  Downloaded file to {download_path}'
 				else:
@@ -222,7 +222,7 @@ class Controller(Generic[Context]):
 					msg += f' - {new_tab_msg}'
 					logger.info(new_tab_msg)
 					await browser.switch_to_tab(len(session.context.pages) - 1)
-				return ActionResult(extracted_content=msg, include_in_memory=True)
+				return ActionResult(extracted_content=msg, include_in_memory=True, changed_to_new_page=page_changed)
 			except Exception as e:
 				logger.warning(f'Element not clickable with index {params.index} - most likely the page changed')
 				return ActionResult(error=str(e))
@@ -254,14 +254,14 @@ class Controller(Generic[Context]):
 			await page.wait_for_load_state()
 			msg = f'🔄  Switched to tab {params.page_id}'
 			logger.info(msg)
-			return ActionResult(extracted_content=msg, include_in_memory=True)
+			return ActionResult(extracted_content=msg, include_in_memory=True, changed_to_new_page=True)
 
 		@self.registry.action('Open url in new tab', param_model=OpenTabAction)
 		async def open_tab(params: OpenTabAction, browser: BrowserContext):
 			await browser.create_new_tab(params.url)
 			msg = f'🔗  Opened new tab with {params.url}'
 			logger.info(msg)
-			return ActionResult(extracted_content=msg, include_in_memory=True)
+			return ActionResult(extracted_content=msg, include_in_memory=True, changed_to_new_page=True)
 
 		# Content Actions
 		@self.registry.action(

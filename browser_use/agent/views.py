@@ -97,6 +97,8 @@ class ActionResult(BaseModel):
 	error: Optional[str] = None
 	include_in_memory: bool = False  # whether to include in past messages as context or not
 
+	changed_to_new_page: bool = Field(default=False, description="このアクションの結果、新しいページに遷移したか、またはタブが切り替わったかを示すフラグ")
+
 
 class StepMetadata(BaseModel):
 	"""Metadata for a single step including timing and token information"""

@@ -1263,12 +1263,14 @@ class BrowserContext:
 			raise BrowserError(f'Failed to input text into index {element_node.highlight_index}')
 
 	@time_execution_async('--click_element_node')
-	async def _click_element_node(self, element_node: DOMElementNode) -> Optional[str]:
+	async def _click_element_node(self, element_node: DOMElementNode) -> tuple[Optional[str], bool]:
 		"""
 		Optimized method to click an element using xpath.
 		"""
 		page = await self.get_current_page()
 		start_url = page.url  # クリック前のURLを記録
+
+		page_changed = False # ページ遷移フラグ
 
 		try:
 			# Highlight before clicking
@@ -1283,6 +1285,7 @@ class BrowserContext:
 			async def perform_click(click_func):
 				"""Performs the actual click, handling both download
 				and navigation scenarios."""
+				nonlocal page_changed
 				if self.config.save_downloads_path:
 					try:
 						# Try short-timeout expect_download to detect a file download has been been triggered
@@ -1304,6 +1307,7 @@ class BrowserContext:
 						
 						# ページ遷移が発生した場合は履歴を更新
 						if page.url != start_url:
+							page_changed = True
 							await self._track_page_navigation(page, page.url)
 				else:
 					# Standard click logic if no download is expected
@@ -1313,22 +1317,25 @@ class BrowserContext:
 					
 					# ページ遷移が発生した場合は履歴を更新
 					if page.url != start_url:
+						page_changed = True
 						print(f"Page URL changed from {start_url} to {page.url}", flush=True)
 						await self._track_page_navigation(page, page.url)
 					else:
 						print(f"Page URL remains the same: {start_url}", flush=True)
 
 			try:
-				return await perform_click(lambda: element_handle.click({"force": True, "timeout": 1500}))
+				download_path = await perform_click(lambda: element_handle.click({"force": True, "timeout": 1500}))
 			except URLNotAllowedError as e:
 				raise e
 			except Exception:
 				try:
-					return await perform_click(lambda: page.evaluate('(el) => el.click()', element_handle))
+					download_path =  await perform_click(lambda: page.evaluate('(el) => el.click()', element_handle))
 				except URLNotAllowedError as e:
 					raise e
 				except Exception as e:
 					raise Exception(f'Failed to click element: {str(e)}')
+
+			return download_path, page_changed
 
 		except URLNotAllowedError as e:
 			raise e

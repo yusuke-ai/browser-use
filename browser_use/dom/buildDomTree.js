@@ -372,49 +372,106 @@
   }
 
   /**
+   * 要素の祖先を辿り、非表示の原因となるスタイルを持つ要素がないかチェックする
+   * @param {Element} element - チェックを開始する要素 (テキストノードの親要素)
+   * @returns {boolean} - 非表示の原因となる祖先が見つかれば true, 見つからなければ false
+   */
+  function hasHiddenAncestor(element) {
+    let current = element; // 開始要素自身もチェック対象に含める
+    while (current && current !== document.documentElement) {
+        const style = getCachedComputedStyle(current); // Use the existing caching function
+        if (!style) return true; // スタイルが取れなければ安全のため隠れているとみなす
+
+        // 1. display: none または visibility: hidden か？
+        if (style.display === 'none' || style.visibility === 'hidden') {
+            return true;
+        }
+        // 2. opacity: 0 か？
+        if (parseFloat(style.opacity) === 0) {
+          return true;
+        }
+
+        // 3. 高さゼロで overflow が hidden/scroll/auto か？
+        const height = parseFloat(style.height);
+        const overflowY = style.overflowY;
+        const overflowX = style.overflowX;
+
+        if (!isNaN(height) && height <= 0) {
+            if (overflowY === 'hidden' || overflowY === 'scroll' || overflowY === 'auto' ||
+                overflowX === 'hidden' || overflowX === 'scroll' || overflowX === 'auto')
+            {
+                return true; // 隠されている原因となる祖先を発見
+            }
+        }
+
+        // 4. offsetHeight/offsetWidth がゼロか？
+        try {
+            if (current.offsetHeight <= 0 || current.offsetWidth <= 0) {
+                if (current !== document.body) {
+                    return true;
+                }
+            }
+        } catch(e) { /* エラーは無視 */ }
+
+        // 次の親へ
+        current = current.parentElement;
+    }
+    return false; // 隠されている原因となる祖先は見つからなかった
+  }
+
+  /**
    * Checks if a text node is visible.
    */
   function isTextNodeVisible(textNode) {
-    try {
-      const range = document.createRange();
-      range.selectNodeContents(textNode);
-      const rect = range.getBoundingClientRect();
+    // Use the global viewportExpansion defined in the outer scope
+    const currentViewportExpansion = typeof viewportExpansion !== 'undefined' ? viewportExpansion : 0;
 
-      // Simple size check
-      if (rect.width === 0 || rect.height === 0) {
+    if (!textNode || textNode.nodeType !== Node.TEXT_NODE) {
         return false;
-      }
-
-      // Simple viewport check without scroll calculations
-      const isInViewport = !(
-        rect.bottom < -viewportExpansion ||
-        rect.top > window.innerHeight + viewportExpansion ||
-        rect.right < -viewportExpansion ||
-        rect.left > window.innerWidth + viewportExpansion
-      );
-
-      // Check parent visibility
-      const parentElement = textNode.parentElement;
-      if (!parentElement) return false;
-
-      try {
-        return isInViewport && parentElement.checkVisibility({
-          checkOpacity: true,
-          checkVisibilityCSS: true,
-        });
-      } catch (e) {
-        // Fallback if checkVisibility is not supported
-        const style = window.getComputedStyle(parentElement);
-        return isInViewport &&
-          style.display !== 'none' &&
-          style.visibility !== 'hidden' &&
-          style.opacity !== '0';
-      }
-    } catch (e) {
-      console.warn('Error checking text node visibility:', e);
-      return false;
     }
-  }
+
+    try {
+        // 1. 親要素を取得し、祖先に非表示要素がないかチェック
+        const parentElement = textNode.parentElement;
+        if (!parentElement) {
+            return false; // 親がなければ表示されない
+        }
+        if (hasHiddenAncestor(parentElement)) {
+            return false; // 祖先に非表示要素があれば false
+        }
+
+        // 2. テキストノード自身の矩形を取得して基本的なチェック
+        const range = document.createRange();
+        range.selectNodeContents(textNode);
+        let rect;
+        try {
+            rect = range.getBoundingClientRect();
+        } catch (e) {
+            return false; // 矩形が取れない場合は false
+        }
+
+        // 矩形がない、または幅か高さがゼロ（または微小）なら非表示
+        if (!rect || rect.width < 0.1 || rect.height < 0.1) {
+            return false;
+        }
+
+        // 3. ビューポート外なら非表示 (viewportExpansion を考慮)
+        const viewportWidth = window.innerWidth;
+        const viewportHeight = window.innerHeight;
+        const isInViewport = !(
+            rect.bottom < -currentViewportExpansion ||
+            rect.top > viewportHeight + currentViewportExpansion ||
+            rect.right < -currentViewportExpansion ||
+            rect.left > viewportWidth + currentViewportExpansion
+        );
+
+        return isInViewport; // 祖先チェックを通過し、矩形があり、ビューポート内なら true
+
+    } catch (e) {
+        // console.warn('[isTextNodeVisible v4 Exception]', e); // Keep warn for debugging if needed
+        return false; // エラー時は false
+    }
+}
 
   // Helper function to check if element is accepted
   function isElementAccepted(element) {

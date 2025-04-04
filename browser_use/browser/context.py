@@ -1261,6 +1261,7 @@ class BrowserContext:
 			if tag_name == 'input' and not (readonly or disabled):
 				logger.debug(f"Using fill() for input element (index: {element_node.highlight_index})")
 				# fill は内部的にクリアしてから入力する
+				await element_handle.fill('')
 				await element_handle.fill(text)
 			# contentEditable 要素の場合、従来の evaluate + type を使う
 			elif is_contenteditable and not (readonly or disabled):

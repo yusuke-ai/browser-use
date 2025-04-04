@@ -1272,6 +1272,7 @@ class BrowserContext:
 			elif not (readonly or disabled):
 				logger.debug(f"Using fill() for other editable element: {tag_name} (index: {element_node.highlight_index})")
 				try:
+					await element_handle.fill('')
 					await element_handle.fill(text)
 				except Exception as fill_error:
 					# fill が失敗した場合 (例: 非対応要素)、type を試す価値はあるか？

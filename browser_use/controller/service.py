@@ -1,9 +1,10 @@
 import asyncio
+import asyncio # しおり: sleepのために追加
 import json
 import enum
 import logging
 import os
-from typing import Dict, Generic, Optional, Type, TypeVar
+from typing import Dict, Generic, Optional, Type, TypeVar, List # しおり: List, Dict を追加
 
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.prompts import PromptTemplate
@@ -27,6 +28,7 @@ from browser_use.controller.views import (
 	SwitchTabAction,
 )
 from browser_use.utils import time_execution_sync
+from browser_use.dom import mutation_observer # しおり: DOM変更監視モジュールをインポート
 
 from PyPDF2 import PdfReader
 
@@ -35,22 +37,22 @@ logger = logging.getLogger(__name__)
 from langchain_core.messages import HumanMessage
 
 def build_messages_from_pdf(images_b64, goal):
-    messages = [
-        HumanMessage(
-            content=[
-                {
-                    "type": "text",
-                    "text": f"以下のPDFの画像やWebサイトのスクリーンショットを見て、抽出ゴールに関係する情報を抜き出してください。これはWebページの情報なので「Webページから情報を抽出しました」という形で報告してください。\n\n抽出ゴール: {goal}"
-                }
-            ] + [
-                {
-                    "type": "image_url",
-                    "image_url": f"data:image/png;base64,{b64}"
-                } for b64 in images_b64
-            ]
-        )
-    ]
-    return messages
+	messages = [
+		HumanMessage(
+			content=[
+				{
+					"type": "text",
+					"text": f"以下のPDFの画像やWebサイトのスクリーンショットを見て、抽出ゴールに関係する情報を抜き出してください。これはWebページの情報なので「Webページから情報を抽出しました」という形で報告してください。\n\n抽出ゴール: {goal}"
+				}
+			] + [
+				{
+					"type": "image_url",
+					"image_url": f"data:image/png;base64,{b64}"
+				} for b64 in images_b64
+			]
+		)
+	]
+	return messages
 
 import pymupdf
 from PIL import Image
@@ -58,41 +60,41 @@ import io
 import base64
 
 def convert_pdf_to_images(pdf_path, max_pages=None, max_size=1500):
-    """
-    PDFを画像化し、各ページをbase64 PNGとして返す。
-    
-    :param pdf_path: PDFファイルパス
-    :param max_pages: 最大ページ数（Noneなら全ページ）
-    :param max_size: 画像の長辺サイズ（ピクセル）
-    :return: base64 PNG画像のリスト（1ページにつき1つ）
-    """
-    images_b64 = []
-    doc = pymupdf.open(pdf_path)
+	"""
+	PDFを画像化し、各ページをbase64 PNGとして返す。
+	
+	:param pdf_path: PDFファイルパス
+	:param max_pages: 最大ページ数（Noneなら全ページ）
+	:param max_size: 画像の長辺サイズ（ピクセル）
+	:return: base64 PNG画像のリスト（1ページにつき1つ）
+	"""
+	images_b64 = []
+	doc = pymupdf.open(pdf_path)
 
-    for i, page in enumerate(doc):
-        if max_pages is not None and i >= max_pages:
-            break
+	for i, page in enumerate(doc):
+		if max_pages is not None and i >= max_pages:
+			break
 
-        pix = page.get_pixmap(dpi=200)  # 高品質に変換
-        img = Image.open(io.BytesIO(pix.tobytes("png")))
+		pix = page.get_pixmap(dpi=200)  # 高品質に変換
+		img = Image.open(io.BytesIO(pix.tobytes("png")))
 
-        # 長辺を max_size に収めるようにリサイズ
-        w, h = img.size
-        if w > h:
-            new_w = max_size
-            new_h = int(h * (max_size / w))
-        else:
-            new_h = max_size
-            new_w = int(w * (max_size / h))
-        img = img.resize((new_w, new_h), Image.LANCZOS)
+		# 長辺を max_size に収めるようにリサイズ
+		w, h = img.size
+		if w > h:
+			new_w = max_size
+			new_h = int(h * (max_size / w))
+		else:
+			new_h = max_size
+			new_w = int(w * (max_size / h))
+		img = img.resize((new_w, new_h), Image.LANCZOS)
 
-        # base64エンコード
-        buffered = io.BytesIO()
-        img.save(buffered, format="PNG")
-        img_b64 = base64.b64encode(buffered.getvalue()).decode("utf-8")
-        images_b64.append(img_b64)
+		# base64エンコード
+		buffered = io.BytesIO()
+		img.save(buffered, format="PNG")
+		img_b64 = base64.b64encode(buffered.getvalue()).decode("utf-8")
+		images_b64.append(img_b64)
 
-    return images_b64
+	return images_b64
 
 
 Context = TypeVar('Context')
@@ -643,39 +645,73 @@ class Controller(Generic[Context]):
 		context: Context | None = None,
 	) -> ActionResult:
 		"""Execute an action"""
+		# しおり: DOM変更を一時的に保持するリストとコールバック (同期関数に変更)
+		detected_changes: List[Dict[str, str]] = []
+		def _dom_change_callback(changes: List[Dict[str, str]]):
+			nonlocal detected_changes
+			detected_changes.extend(changes)
+			# 重複を除去（念のため）
+			unique_changes = []
+			seen = set()
+			for change in detected_changes:
+				change_tuple = (change.get('tag'), change.get('content'))
+				if change_tuple not in seen:
+					unique_changes.append(change)
+					seen.add(change_tuple)
+			detected_changes = unique_changes
 
 		try:
+			result = None # しおり: result を try の外で初期化
+			action_name = "" # しおり: action_name を try の外で初期化
 			for action_name, params in action.model_dump(exclude_unset=True).items():
 				if params is not None:
-					# with Laminar.start_as_current_span(
-					# 	name=action_name,
-					# 	input={
+					# しおり: アクション実行前にDOM監視を開始
+					await mutation_observer.subscribe(_dom_change_callback)
+					# result = None # しおり: result を初期化 (ループ内で初期化するように変更)
+					try: # しおり: アクション実行部分を try で囲む
+						# with Laminar.start_as_current_span(
+						# 	name=action_name,
+					# 	input={ # しおり: インデント修正
 					# 		'action': action_name,
 					# 		'params': params,
 					# 	},
 					# 	span_type='TOOL',
 					# ):
-					result = await self.registry.execute_action(
-						action_name,
-						params,
-						browser=browser_context,
-						page_extraction_llm=page_extraction_llm,
-						sensitive_data=sensitive_data,
-						available_file_paths=available_file_paths,
-						context=context,
-					)
+						result = await self.registry.execute_action(
+							action_name,
+							params,
+							browser=browser_context,
+							page_extraction_llm=page_extraction_llm,
+							sensitive_data=sensitive_data,
+							available_file_paths=available_file_paths,
+							context=context,
+						)
+					finally: # しおり: try に対応する finally (タブインデント)
+							# しおり: アクション実行後に少し待ってからDOM監視を停止
+							await asyncio.sleep(0.5) # 変更が反映されるのを待つ
+							await mutation_observer.unsubscribe(_dom_change_callback)
 
 					# Laminar.set_span_output(result)
 
-					if isinstance(result, str):
-						return ActionResult(extracted_content=result)
-					elif isinstance(result, ActionResult):
-						return result
-					elif result is None:
-						return ActionResult()
-					else:
-						raise ValueError(f'Invalid action result type: {type(result)} of {result}')
-			return ActionResult()
+			# しおり: ActionResultにDOM変更情報を追加する（インデントを for ループのレベルに戻す - タブ文字使用）
+			if isinstance(result, ActionResult):
+				result.dom_changes = detected_changes # 次のステップで有効化
+				if detected_changes:
+					# action_name が未定義の場合があるため、チェックを追加
+					log_action_name = action_name if action_name else "Unknown Action"
+					logger.info(f"DOM changes detected during action {log_action_name}: {detected_changes}")
+					# 必要であれば、既存の extracted_content に情報を追記
+					# result.extracted_content += f"\nDOM Changes: {json.dumps(detected_changes, ensure_ascii=False)}"
+
+			if isinstance(result, str): # しおり: インデント修正 (タブ文字使用)
+				return ActionResult(extracted_content=result)
+			elif isinstance(result, ActionResult): # しおり: インデント修正 (タブ文字使用)
+				return result
+			elif result is None: # しおり: インデント修正 (タブ文字使用)
+				# ループが一度も実行されなかった場合 (action.model_dump が空など)
+				return ActionResult()
+			else: # しおり: インデント修正 (タブ文字使用)
+				raise ValueError(f'Invalid action result type: {type(result)} of {result}')
+			# return ActionResult() # しおり: この行は不要 (ループ後に到達しないため削除)
 		except Exception as e:
 			raise e
-		

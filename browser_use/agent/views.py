@@ -5,7 +5,7 @@ import traceback
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Literal, Optional, Type
+from typing import Any, Dict, List, Literal, Optional, Type # しおり: List, Dict は既にあるのでOK
 
 from langchain_core.language_models.chat_models import BaseChatModel
 from openai import RateLimitError
@@ -98,6 +98,7 @@ class ActionResult(BaseModel):
 	include_in_memory: bool = False  # whether to include in past messages as context or not
 
 	changed_to_new_page: bool = Field(default=False, description="このアクションの結果、新しいページに遷移したか、またはタブが切り替わったかを示すフラグ")
+	dom_changes: Optional[List[Dict[str, str]]] = Field(default=None, description="このアクションの実行中に検知されたDOMの変更（要素の追加やテキスト変更）") # しおり: DOM変更情報を格納するフィールドを追加
 
 
 class StepMetadata(BaseModel):

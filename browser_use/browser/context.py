@@ -35,6 +35,7 @@ from browser_use.browser.views import (
 from browser_use.dom.service import DomService
 from browser_use.dom.views import DOMElementNode, SelectorMap
 from browser_use.utils import time_execution_async, time_execution_sync
+from browser_use.dom import mutation_observer # しおり: DOM変更監視モジュールをインポート
 
 if TYPE_CHECKING:
 	from browser_use.browser.browser import Browser
@@ -175,8 +176,9 @@ class BrowserContext:
 		self.session: BrowserSession | None = None
 
 		self._latest_page = None
-		
-		self.domain_handler = DomainHandler()	
+		self._overlay_id = "playwright-highlight-container" # しおり: 除外IDを修正
+
+		self.domain_handler = DomainHandler()
 
 	def get_domain_handler(self):
 		"""Get the domain handler"""
@@ -300,13 +302,20 @@ class BrowserContext:
 	async def _add_new_page_listener(self, context: PlaywrightBrowserContext):
 		async def on_page(page: Page):
 			if self.browser.config.cdp_url:
-				await page.reload()  # Reload the page to avoid timeout errors
+				page.reload()  # しおり: await を削除 (reloadはNoneを返すため)
 			await page.wait_for_load_state()
 			logger.debug(f'New page opened: {page.url}')
 			# 新しいページを最新のページとして記録
 			self._latest_page = page
 			if self.session is not None:
 				self.state.target_id = None
+			# しおり: MutationObserverを新しいページにアタッチ (引数 self._overlay_id を渡す)
+			try:
+				# ページ読み込み完了後に実行
+				await page.evaluate(mutation_observer.get_add_mutation_observer_script(self._overlay_id))
+				logger.debug(f"Attached mutation observer to new page: {page.url}")
+			except Exception as e:
+				logger.error(f"Failed to attach mutation observer to new page {page.url}: {e}")
 
 		self._page_event_handler = on_page
 		context.on('page', on_page)
@@ -449,6 +458,16 @@ class BrowserContext:
             })();
             """
 		)
+
+		# しおり: Python関数をJavaScriptに公開
+		try:
+			await context.expose_function("dom_mutation_change_detected", mutation_observer.dom_mutation_change_detected)
+			logger.debug("Exposed dom_mutation_change_detected function to JavaScript")
+		except Exception as e:
+			logger.error(f"Failed to expose dom_mutation_change_detected function: {e}")
+		
+		# しおり: 新しいページが開かれたときのリスナーを追加
+		await self._add_new_page_listener(context)
 
 		return context
 
@@ -652,6 +671,15 @@ class BrowserContext:
 		# Sleep remaining time if needed
 		if remaining > 0:
 			await asyncio.sleep(remaining)
+
+		# しおり: ページ読み込み完了後にMutationObserverをアタッチ（まだなければ）
+		try:
+			page = await self.get_current_page()
+			# window.mutationObserverAttached フラグを確認して、なければアタッチ (引数 self._overlay_id を渡す)
+			await page.evaluate(mutation_observer.get_add_mutation_observer_script(self._overlay_id))
+			logger.debug(f"Ensured mutation observer is attached after page load: {page.url}")
+		except Exception as e:
+			logger.error(f"Failed to attach mutation observer after page load {page.url}: {e}")
 
 	def _is_url_allowed(self, url: str) -> bool:
 		"""Check if a URL is allowed based on the whitelist configuration."""

@@ -8,17 +8,17 @@ logger = logging.getLogger(__name__)
 
 # グローバル変数としてコールバックリストを保持（Agent-Eの設計を踏襲）
 # 本来はクラスに持たせる方が良いかもしれませんが、まずは元の設計に合わせます
-DOM_change_callback: List[Callable[[List[Dict[str, str]]], None]] = []
+DOM_change_callback: List[Callable[[List[Dict[str, Any]]], None]] = []
 _lock = asyncio.Lock()
 
-async def subscribe(callback: Callable[[List[Dict[str, str]]], None]):
+async def subscribe(callback: Callable[[List[Dict[str, Any]]], None]):
     """DOM変更通知を受け取るコールバック関数を登録します。"""
     async with _lock:
         if callback not in DOM_change_callback:
             DOM_change_callback.append(callback)
             logger.debug(f"DOM mutation observer subscribed by: {callback.__name__}")
 
-async def unsubscribe(callback: Callable[[List[Dict[str, str]]], None]):
+async def unsubscribe(callback: Callable[[List[Dict[str, Any]]], None]):
     """登録されたコールバック関数を解除します。"""
     async with _lock:
         if callback in DOM_change_callback:
@@ -69,6 +69,36 @@ def get_add_mutation_observer_script(overlay_id: str = "playwright-highlight-con
         }}
         console.log("Attaching mutation observer...");
 
+        // XPathを取得するヘルパー関数
+        function getXPathForElement(element) {{
+            if (!element) return '';
+            
+            // 要素がdocument.bodyの場合は特別扱い
+            if (element === document.body) return '/html/body';
+            
+            // 親要素のXPathを取得（再帰）
+            let parentXPath = '';
+            if (element.parentNode && element.parentNode !== document) {{
+                parentXPath = getXPathForElement(element.parentNode);
+            }}
+            
+            // 現在の要素のタグ名
+            const tagName = element.tagName.toLowerCase();
+            
+            // 同じタグ名の兄弟要素の中での位置を計算
+            let count = 1;
+            let sibling = element.previousElementSibling;
+            while (sibling) {{
+                if (sibling.tagName.toLowerCase() === tagName) {{
+                    count++;
+                }}
+                sibling = sibling.previousElementSibling;
+            }}
+            
+            // XPathを構築
+            return `${{parentXPath}}/${{tagName}}[${{count}}]`;
+        }}
+
         const observer = new MutationObserver((mutationsList, observer) => {{
             let changes_detected = []; // 変更情報を格納する配列
             for(let mutation of mutationsList) {{
@@ -84,8 +114,18 @@ def get_add_mutation_observer_script(overlay_id: str = "playwright-highlight-con
                             let isVisible = style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
                             let content = node.innerText?.trim(); // 要素内のテキスト内容を取得
                             if(isVisible && content){{
-                                // タグ名と内容をオブジェクトにして配列に追加
-                                changes_detected.push({{tag: node.tagName, content: content}});
+                                // XPathとHTMLを取得
+                                const xpath = getXPathForElement(node);
+                                const html = node.outerHTML;
+                                
+                                // タグ名、内容、XPath、HTMLをオブジェクトにして配列に追加
+                                changes_detected.push({{
+                                    type: 'added',
+                                    tag: node.tagName,
+                                    content: content,
+                                    xpath: xpath,
+                                    html: html
+                                }});
                             }}
                         }}
                     }}
@@ -104,8 +144,18 @@ def get_add_mutation_observer_script(overlay_id: str = "playwright-highlight-con
                         if(isVisible && content){{
                             // 同じ内容がすでに追加されていないかチェック（characterDataは連続して発生することがあるため）
                             if(!changes_detected.some(change => change.tag === parentElement.tagName && change.content === content)) {{
-                                // 親要素のタグ名とテキスト内容をオブジェクトにして配列に追加
-                                changes_detected.push({{tag: parentElement.tagName, content: content}});
+                                // XPathとHTMLを取得
+                                const xpath = getXPathForElement(parentElement);
+                                const html = parentElement.outerHTML;
+                                
+                                // タグ名、内容、XPath、HTMLをオブジェクトにして配列に追加
+                                changes_detected.push({{
+                                    type: 'modified',
+                                    tag: parentElement.tagName,
+                                    content: content,
+                                    xpath: xpath,
+                                    html: html
+                                }});
                             }}
                         }}
                     }}

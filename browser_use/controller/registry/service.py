@@ -1,4 +1,5 @@
 import asyncio
+import fnmatch # URLパターンマッチング用
 from inspect import iscoroutinefunction, signature
 from typing import Any, Callable, Dict, Generic, Optional, Type, TypeVar, List # List を追加
 
@@ -49,6 +50,7 @@ class Registry(Generic[Context]):
 		self,
 		description: str,
 		param_model: Optional[Type[BaseModel]] = None,
+		url_patterns: Optional[List[str]] = None, # アクションが有効なURLパターン
 	):
 		"""Decorator for registering actions"""
 
@@ -79,6 +81,7 @@ class Registry(Generic[Context]):
 				description=description,
 				function=wrapped_func,
 				param_model=actual_param_model,
+				url_patterns=url_patterns, # URLパターンを登録
 			)
 			self.registry.actions[func.__name__] = action
 			return func
@@ -169,6 +172,30 @@ class Registry(Generic[Context]):
 		for key, value in params.model_dump().items():
 			params.__dict__[key] = replace_secrets(value)
 		return params
+
+	# ★ 新しいメソッド: URLに基づいて許可されたアクション名リストを取得
+	def get_allowed_actions(self, url: str) -> List[str]:
+		"""Get allowed action names for a given URL."""
+		allowed = []
+		# exclude_actions に含まれるアクションは最初から除外
+		registered_actions = {
+			name: action for name, action in self.registry.actions.items()
+			if name not in self.exclude_actions
+		}
+
+		for name, action in registered_actions.items():
+			# url_patterns が None (共通アクション) なら許可
+			if action.url_patterns is None:
+				allowed.append(name)
+			# url_patterns が指定されていて、URLが None でなく、パターンにマッチする場合
+			elif url is not None and action.url_patterns:
+				for pattern in action.url_patterns:
+					# fnmatch を使ってワイルドカードマッチング
+					if fnmatch.fnmatch(url, pattern):
+						allowed.append(name)
+						break # 一致したらこのアクションは許可リストに追加し、次のアクションへ
+		return allowed
+
 
 	@time_execution_sync('--create_action_model')
 	def create_action_model(self, include_actions: Optional[list[str]] = None) -> Type[ActionModel]:

@@ -10,6 +10,7 @@ class RegisteredAction(BaseModel):
 	description: str
 	function: Callable
 	param_model: Type[BaseModel]
+	url_patterns: Optional[List[str]] = None # アクションが有効なURLパターンのリスト (Noneなら共通)
 
 	model_config = ConfigDict(arbitrary_types_allowed=True)
 

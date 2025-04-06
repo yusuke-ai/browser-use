@@ -75,7 +75,7 @@ async def test_act_with_dom_changes(controller, mock_browser_context, mock_regis
 	"""actメソッドがDOM変更を検知し、結果に含めるかテスト"""
 
 	action_to_execute = DummyActionModel(dummy_action=DummyParams())
-	expected_dom_changes = [{"tag": "DIV", "content": "New Div"}]
+	expected_dom_changes = [{"type": "added", "tag": "DIV", "content": "New Div"}]
 
 	# get_allowed_actions は Controller 内部で registry.get_allowed_actions を呼ぶようになった
 	# act メソッド内のバリデーションをテストするため、controller.get_allowed_actions をモック化
@@ -129,12 +129,20 @@ async def test_act_with_dom_changes(controller, mock_browser_context, mock_regis
 		assert result.extracted_content == "Action executed" # モックの返り値
 		
 		# dom_changes が設定されていることを確認
-		# HTML形式に変換されていることを確認
 		assert result.dom_changes is not None
-		assert isinstance(result.dom_changes, str)
-		assert "<div class='dom-changes'>" in result.dom_changes
-		assert "<span class='tag'>DIV</span>" in result.dom_changes
-		assert "<span class='content'>New Div</span>" in result.dom_changes
+		assert isinstance(result.dom_changes, list)
+		assert len(result.dom_changes) == 1
+		
+		# 変更情報の内容を確認
+		change = result.dom_changes[0]
+		assert change['type'] == 'added'  # JavaScriptで設定されたtype
+		assert change['tag'] == 'DIV'
+		assert change['content'] == 'New Div'
+		assert 'xpath' in change  # XPathが含まれていることを確認
+		assert 'html' in change   # HTMLが含まれていることを確認
+		
+		# target_element は設定されていないはず（このテストではクリックやテキスト入力を行っていないため）
+		assert result.target_element is None
 
 @pytest.mark.asyncio # 非同期テストにマーク付与
 async def test_act_without_dom_changes(controller, mock_browser_context, mock_registry):
@@ -176,6 +184,69 @@ async def test_act_without_dom_changes(controller, mock_browser_context, mock_re
 		assert isinstance(result, ActionResult)
 		assert result.extracted_content == "Action executed"
 		# DOM変更がないので dom_changes は None のはず
+		assert result.dom_changes is None
+		# target_element も設定されていないはず
+		assert result.target_element is None
+
+@pytest.mark.asyncio # 非同期テストにマーク付与
+async def test_act_with_target_element(controller, mock_browser_context, mock_registry):
+	"""クリックアクションでtarget_elementが設定されるかテスト"""
+	
+	# クリックアクション用のモデルを作成
+	class ClickParams(BaseModel):
+		index: int = 1
+	
+	class ClickActionModel(ActionModel):
+		click_element: ClickParams = Field(...)
+	
+	action_to_execute = ClickActionModel(click_element=ClickParams())
+	
+	# DOM要素のモック
+	mock_element_node = MagicMock()
+	mock_element_node.tag_name = "BUTTON"
+	mock_element_node.xpath = "/html/body/div/button[1]"
+	
+	# 要素ハンドルのモック
+	mock_element_handle = AsyncMock()
+	mock_element_handle.evaluate = AsyncMock(return_value="<button>Click me</button>")
+	
+	# ブラウザコンテキストのモックを設定
+	mock_browser_context.get_dom_element_by_index = AsyncMock(return_value=mock_element_node)
+	mock_browser_context.get_locate_element = AsyncMock(return_value=mock_element_handle)
+	mock_page = AsyncMock()
+	mock_browser_context.get_current_page = AsyncMock(return_value=mock_page)
+	
+	# モックのActionResultを作成し、target_elementを設定
+	mock_result = ActionResult(
+		extracted_content="Action executed",
+		target_element={
+			'tag': "BUTTON",
+			'xpath': "/html/body/div/button[1]",
+			'html': "<button>Click me</button>"
+		}
+	)
+	
+	# registry.execute_actionが返すActionResultを設定
+	mock_registry.execute_action.return_value = mock_result
+	
+	with patch.object(controller, 'get_allowed_actions', return_value=['click_element']) as mock_get_allowed, \
+		 patch('browser_use.dom.mutation_observer.subscribe', new_callable=AsyncMock) as mock_subscribe, \
+		 patch('browser_use.dom.mutation_observer.unsubscribe', new_callable=AsyncMock) as mock_unsubscribe, \
+		 patch('browser_use.controller.service.asyncio.sleep', new_callable=AsyncMock) as mock_sleep:
+		
+		# act を実行
+		result = await controller.act(
+			action=action_to_execute,
+			browser_context=mock_browser_context,
+		)
+		
+		# 操作対象の要素情報が設定されていることを確認
+		assert result.target_element is not None
+		assert result.target_element['tag'] == "BUTTON"
+		assert result.target_element['xpath'] == "/html/body/div/button[1]"
+		assert result.target_element['html'] == "<button>Click me</button>"
+		
+		# dom_changes は設定されていないはず（このテストではDOM変更をシミュレートしていないため）
 		assert result.dom_changes is None
 
 # TODO: アクションが str や None を返す場合のテストも追加 (現状維持方針なら不要)

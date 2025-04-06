@@ -963,48 +963,57 @@
 
     // if (isInteractiveCandidate(node)) {
 
-    // Check interactivity and visibility
+    // Check interactivity and visibility - OPTIMIZED VERSION
     if (node.nodeType === Node.ELEMENT_NODE) {
       let isPotentiallyInteractiveViaLabel = false;
-      nodeData.isVisible = isElementVisible(node);
-
-      // Checkbox/Radio special handling: Check label visibility if input is hidden
-      const tagNameLower = node.tagName.toLowerCase();
-      if (!nodeData.isVisible && node.id && (tagNameLower === 'input' && (node.type === 'checkbox' || node.type === 'radio'))) {
-        const label = document.querySelector(`label[for="${node.id}"]`);
-        if (label) {
-          // Use cached functions for label checks
-          const labelVisible = isElementVisible(label);
-          const labelTop = isTopElement(label);
-          if (labelVisible && labelTop) {
-            // Treat as potentially interactive if label is visible and top
-            isPotentiallyInteractiveViaLabel = true;
-            // console.log(`[buildDomTree] Input #${node.id} is hidden, but visible/top label found. Proceeding with checks.`);
+      
+      // 最適化1: まず、インタラクティブな候補かどうかを高速チェック
+      // インタラクティブな候補でなければ、重い処理をスキップ
+      const isCandidate = isInteractiveCandidate(node);
+      
+      // 最適化2: インタラクティブな候補でない場合は、可視性だけチェックして終了
+      if (!isCandidate) {
+        nodeData.isVisible = isElementVisible(node);
+        // インタラクティブな候補でなければ、他のチェックはスキップ
+        // これにより、大部分の要素で重い処理を回避
+      } else {
+        // インタラクティブな候補の場合のみ、詳細なチェックを実行
+        nodeData.isVisible = isElementVisible(node);
+        
+        // Checkbox/Radio special handling: Check label visibility if input is hidden
+        const tagNameLower = node.tagName.toLowerCase();
+        if (!nodeData.isVisible && node.id && (tagNameLower === 'input' && (node.type === 'checkbox' || node.type === 'radio'))) {
+          const label = document.querySelector(`label[for="${node.id}"]`);
+          if (label) {
+            // Use cached functions for label checks
+            const labelVisible = isElementVisible(label);
+            // 最適化3: ラベルが可視状態の場合のみ、isTopElementを呼び出す
+            if (labelVisible) {
+              const labelTop = isTopElement(label);
+              if (labelTop) {
+                isPotentiallyInteractiveViaLabel = true;
+              }
+            }
           }
         }
-      }
-
-      // Proceed with checks if element is visible OR it's a checkbox/radio with a visible/top label
-      if (nodeData.isVisible || isPotentiallyInteractiveViaLabel) {
-        // Check if the element itself (or its label) is the top element
-        nodeData.isTopElement = isTopElement(node);
-
-        // Allow check if element is top OR if label was visible/top
-        // Note: If label is visible/top but input is hidden *behind something else*, isTopElement(node) will be false.
-        // We proceed to check isInteractiveElement anyway if the label was good.
-        if (nodeData.isTopElement || isPotentiallyInteractiveViaLabel) {
-           // Run interactivity check on the input element itself
-           nodeData.isInteractive = isInteractiveElement(node);
-
-           // Highlight if interactive
-           if (nodeData.isInteractive) {
-             // Check if the element (input) is within the viewport for highlighting
-             // Use the potentially visible label's rect if the input itself is hidden? No, stick to input's rect.
-             nodeData.isInViewport = isInExpandedViewport(node, viewportExpansion);
-
-             if (nodeData.isInViewport) { // Only highlight if in viewport
+        
+        // 最適化4: 可視状態の要素のみ、さらにチェックを続行
+        if (nodeData.isVisible || isPotentiallyInteractiveViaLabel) {
+          // 最適化5: まずインタラクティブかどうかをチェック（これは比較的軽い処理）
+          nodeData.isInteractive = isInteractiveElement(node);
+          
+          // 最適化6: インタラクティブな要素のみ、isTopElementとisInViewportをチェック
+          if (nodeData.isInteractive) {
+            // ビューポート内かどうかをチェック（これも比較的軽い処理）
+            nodeData.isInViewport = isInExpandedViewport(node, viewportExpansion);
+            
+            // 最適化7: ビューポート内の要素のみ、isTopElementをチェック（最も重い処理）
+            if (nodeData.isInViewport) {
+              nodeData.isTopElement = isTopElement(node);
+              
+              // 最適化8: 最前面の要素またはラベル経由の要素のみハイライト
+              if (nodeData.isTopElement || isPotentiallyInteractiveViaLabel) {
                 nodeData.highlightIndex = highlightIndex++;
-                // Highlight the input element itself, even if triggered via label
                 const elementToHighlight = node;
                 if (doHighlightElements) {
                   if (focusHighlightIndex >= 0) {
@@ -1015,8 +1024,9 @@
                     highlightElement(elementToHighlight, nodeData.highlightIndex, parentIframe);
                   }
                 }
-             }
-           }
+              }
+            }
+          }
         }
       }
     }

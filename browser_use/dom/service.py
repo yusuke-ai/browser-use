@@ -1,6 +1,7 @@
 import gc
 import json
 import logging
+import time
 from dataclasses import dataclass
 from importlib import resources
 from typing import TYPE_CHECKING, Optional
@@ -82,18 +83,28 @@ class DomService:
 		self,
 		eval_page: dict,
 	) -> tuple[DOMElementNode, SelectorMap]:
+		start_time = time.time()
+		
+		# ステップ1: 初期化
+		step1_start = time.time()
 		js_node_map = eval_page['map']
 		js_root_id = eval_page['rootId']
 
 		selector_map = {}
 		node_map = {}
+		step1_end = time.time()
+		logger.debug(f'_construct_dom_tree - Step 1 (初期化): {(step1_end - step1_start) * 1000:.2f}ms')
 
+		# ステップ2: ノードの解析とマップ構築
+		step2_start = time.time()
+		node_count = 0
 		for id, node_data in js_node_map.items():
 			node, children_ids = self._parse_node(node_data)
 			if node is None:
 				continue
 
 			node_map[id] = node
+			node_count += 1
 
 			if isinstance(node, DOMElementNode) and node.highlight_index is not None:
 				selector_map[node.highlight_index] = node
@@ -109,17 +120,37 @@ class DomService:
 
 					child_node.parent = node
 					node.children.append(child_node)
+		step2_end = time.time()
+		logger.debug(f'_construct_dom_tree - Step 2 (ノード解析とマップ構築): {(step2_end - step2_start) * 1000:.2f}ms, ノード数: {node_count}')
 
+		# ステップ3: ルートノード取得とクリーンアップ
+		step3_start = time.time()
 		html_to_dict = node_map[str(js_root_id)]
 
+		# 大きなデータ構造を明示的に削除
 		del node_map
 		del js_node_map
 		del js_root_id
 
-		gc.collect()
+		# ノード数が多い場合のみガベージコレクションを実行
+		if node_count > 1000:
+			gc_start = time.time()
+			gc.collect()
+			gc_end = time.time()
+			logger.debug(f'_construct_dom_tree - GC時間: {(gc_end - gc_start) * 1000:.2f}ms')
+		
+		step3_end = time.time()
+		logger.debug(f'_construct_dom_tree - Step 3 (クリーンアップ): {(step3_end - step3_start) * 1000:.2f}ms')
 
 		if html_to_dict is None or not isinstance(html_to_dict, DOMElementNode):
 			raise ValueError('Failed to parse HTML to dictionary')
+
+		end_time = time.time()
+		total_time = (end_time - start_time) * 1000
+		logger.debug(f'_construct_dom_tree - 合計時間: {total_time:.2f}ms')
+		logger.debug(f'_construct_dom_tree - 内訳: 初期化={((step1_end - step1_start) * 1000):.2f}ms ({((step1_end - step1_start) * 100 / (end_time - start_time)):.1f}%), ' +
+				   f'ノード解析={((step2_end - step2_start) * 1000):.2f}ms ({((step2_end - step2_start) * 100 / (end_time - start_time)):.1f}%), ' +
+				   f'クリーンアップ={((step3_end - step3_start) * 1000):.2f}ms ({((step3_end - step3_start) * 100 / (end_time - start_time)):.1f}%)')
 
 		return html_to_dict, selector_map
 

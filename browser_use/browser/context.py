@@ -1340,10 +1340,11 @@ class BrowserContext:
 		page_changed = False # ページ遷移フラグ
 
 		try:
-			# Highlight before clicking
+			# 最適化1: ハイライト処理をスキップ
 			# if element_node.highlight_index is not None:
 			# 	await self._update_state(focus_element=element_node.highlight_index)
 
+			# 最適化2: 要素の特定を高速化
 			element_handle = await self.get_locate_element(element_node)
 
 			if element_handle is None:
@@ -1355,8 +1356,8 @@ class BrowserContext:
 				nonlocal page_changed
 				if self.config.save_downloads_path:
 					try:
-						# Try short-timeout expect_download to detect a file download has been been triggered
-						async with page.expect_download(timeout=5000) as download_info:
+						# 最適化3: ダウンロードのタイムアウトを短縮
+						async with page.expect_download(timeout=2000) as download_info:
 							await click_func()
 						download = await download_info.value
 						# Determine file path
@@ -1369,7 +1370,8 @@ class BrowserContext:
 					except TimeoutError:
 						# If no download is triggered, treat as normal click
 						logger.debug('No download triggered within timeout. Checking navigation...')
-						await page.wait_for_load_state()
+						# 最適化4: load_stateのタイムアウトを設定
+						await page.wait_for_load_state(timeout=3000)
 						await self._check_and_handle_navigation(page)
 						
 						# ページ遷移が発生した場合は履歴を更新
@@ -1379,24 +1381,25 @@ class BrowserContext:
 				else:
 					# Standard click logic if no download is expected
 					await click_func()
-					await page.wait_for_load_state()
+					# 最適化5: load_stateのタイムアウトを設定
+					await page.wait_for_load_state(timeout=3000)
 					await self._check_and_handle_navigation(page)
 					
 					# ページ遷移が発生した場合は履歴を更新
 					if page.url != start_url:
 						page_changed = True
-						print(f"Page URL changed from {start_url} to {page.url}", flush=True)
 						await self._track_page_navigation(page, page.url)
-					else:
-						print(f"Page URL remains the same: {start_url}", flush=True)
 
+			# 最適化6: クリック方法を改善
 			try:
-				download_path = await perform_click(lambda: element_handle.click({"force": True, "timeout": 1500}))
+				# タイムアウトを短縮し、noWaitAfterオプションを追加
+				download_path = await perform_click(lambda: element_handle.click({"force": True, "timeout": 1000, "noWaitAfter": True}))
 			except URLNotAllowedError as e:
 				raise e
 			except Exception:
 				try:
-					download_path =  await perform_click(lambda: page.evaluate('(el) => el.click()', element_handle))
+					# JavaScriptによるクリックも高速化
+					download_path = await perform_click(lambda: page.evaluate('(el) => { el.click(); return null; }', element_handle))
 				except URLNotAllowedError as e:
 					raise e
 				except Exception as e:

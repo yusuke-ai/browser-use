@@ -1,4 +1,4 @@
-from typing import Callable, Dict, Type
+from typing import Callable, Dict, Type, Optional, List # Optional, List を追加
 
 from pydantic import BaseModel, ConfigDict
 
@@ -65,6 +65,10 @@ class ActionRegistry(BaseModel):
 
 	actions: Dict[str, RegisteredAction] = {}
 
-	def get_prompt_description(self) -> str:
-		"""Get a description of all actions for the prompt"""
-		return '\n'.join([action.prompt_description() for action in self.actions.values()])
+	def get_prompt_description(self, allowed_actions: Optional[list[str]] = None) -> str:
+		"""Get a description of actions for the prompt, optionally filtered by allowed_actions"""
+		actions_to_describe = [
+			action for name, action in self.actions.items()
+			if allowed_actions is None or name in allowed_actions
+		]
+		return '\n'.join([action.prompt_description() for action in actions_to_describe])

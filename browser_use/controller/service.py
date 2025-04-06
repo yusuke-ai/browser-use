@@ -104,10 +104,17 @@ class Controller(Generic[Context]):
 		self,
 		exclude_actions: list[str] = [],
 		output_model: Optional[Type[BaseModel]] = None,
+		url_action_map: Optional[Dict[str, List[str]]] = None,
+		common_actions: Optional[List[str]] = None, # 追加
 	):
 		self.registry = Registry[Context](exclude_actions)
+		self.url_action_map = url_action_map if url_action_map is not None else {}
+		# Sort the map by prefix length descending to match longest prefix first
+		self.sorted_url_prefixes = sorted(self.url_action_map.keys(), key=len, reverse=True)
+		self._pending_common_actions = common_actions # 一時的に保持
 
 		"""Register all default browser actions"""
+		# --- ここからアクション登録 ---
 
 		if output_model is not None:
 			# Create a new model that extends the output model with success parameter
@@ -281,7 +288,8 @@ class Controller(Generic[Context]):
 					content = pdf_content
 					is_pdf = True
 				else:
-					content = markdownify.markdownify(await page.content())
+					page_content = await page.content() # 先に取得
+					content = markdownify.markdownify(page_content) if page_content else "" # 空チェック追加
 			except Exception as e:
 				import traceback
 				traceback.print_exc()
@@ -594,6 +602,42 @@ class Controller(Generic[Context]):
 				logger.error(msg)
 				return ActionResult(error=msg, include_in_memory=True)
 
+		# --- アクション登録の終わり ---
+		# __init__ の最後に common_actions を設定
+		# すべてのアクション登録が終わった後に実行
+		if self._pending_common_actions is None:
+			# If common_actions was not provided, default to all registered actions
+			self.common_actions = list(self.registry.registry.actions.keys())
+		else:
+			# If common_actions was provided, use it
+			self.common_actions = self._pending_common_actions
+		del self._pending_common_actions # 不要になった一時変数を削除
+
+	# --- ここからメソッド定義 (クラスレベルのインデント) ---
+	def get_allowed_actions(self, url: str) -> List[str]:
+		"""Get allowed actions for a given URL based on common_actions and url_action_map."""
+		specific_actions = set()
+		# Find the longest matching prefix
+		for prefix in self.sorted_url_prefixes:
+			if url.startswith(prefix):
+				specific_actions = set(self.url_action_map[prefix])
+				break # Longest prefix found
+
+		# Combine common actions and specific actions
+		allowed = set(self.common_actions).union(specific_actions)
+		# Ensure all allowed actions actually exist in the registry
+		return [action for action in allowed if action in self.registry.registry.actions]
+
+	def get_prompt_description(self, url: str) -> str:
+		"""Get a description of allowed actions for the prompt based on the URL."""
+		allowed_actions = self.get_allowed_actions(url)
+		return self.registry.get_prompt_description(allowed_actions=allowed_actions)
+
+	def create_action_model(self, url: str) -> Type[ActionModel]:
+		"""Creates a Pydantic model from allowed actions based on the URL."""
+		allowed_actions = self.get_allowed_actions(url)
+		return self.registry.create_action_model(include_actions=allowed_actions)
+
 	# Register ---------------------------------------------------------------
 
 	async def maybe_get_content_if_pdf(self, context, page):
@@ -661,13 +705,34 @@ class Controller(Generic[Context]):
 			detected_changes = unique_changes
 
 		try:
-			result = None # しおり: result を try の外で初期化
-			action_name = "" # しおり: action_name を try の外で初期化
-			for action_name, params in action.model_dump(exclude_unset=True).items():
-				if params is not None:
+			result = None
+			action_name = ""
+			params = None # params をループの外で初期化
+
+			# action モデルから実行するアクション名とパラメータを取得
+			action_data = action.model_dump(exclude_unset=True)
+			if not action_data:
+				return ActionResult(error="No action specified.") # アクションが指定されていない場合
+
+			# 通常、action_data には1つのキーしかないはず
+			action_name = next(iter(action_data))
+			params = action_data[action_name]
+
+			if params is not None:
+					# --- URLベースのアクションバリデーション ---
+					current_page = await browser_context.get_current_page()
+					current_url = current_page.url
+					allowed_actions = self.get_allowed_actions(current_url)
+
+					if action_name not in allowed_actions:
+						error_msg = f"Action '{action_name}' is not allowed for the current URL: {current_url}. Allowed actions: {allowed_actions}"
+						logger.error(error_msg)
+						# raise ValueError(error_msg) # エラーを投げる代わりに ActionResult で返す
+						return ActionResult(error=error_msg, include_in_memory=True)
+					# --- バリデーション終了 ---
+
 					# しおり: アクション実行前にDOM監視を開始
 					await mutation_observer.subscribe(_dom_change_callback)
-					# result = None # しおり: result を初期化 (ループ内で初期化するように変更)
 					try: # しおり: アクション実行部分を try で囲む
 						# with Laminar.start_as_current_span(
 						# 	name=action_name,

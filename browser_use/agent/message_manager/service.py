@@ -100,6 +100,84 @@ class MessageManager:
 			filepaths_msg = HumanMessage(content=f'Here are file paths you can use: {self.settings.available_file_paths}')
 			self._add_message_with_tokens(filepaths_msg)
 
+	def update_system_prompt_action_description(self, action_description: str) -> None:
+		"""Update the action description within the system prompt message."""
+		# Find the system message (usually the first one)
+		system_message_index = -1
+		for i, msg_item in enumerate(self.state.history.messages):
+			if isinstance(msg_item.message, SystemMessage):
+				system_message_index = i
+				break
+
+		if system_message_index != -1:
+			# Recreate the SystemPrompt with the new action description
+			# Assuming SystemPrompt class is accessible or we reconstruct the logic here
+			# We need access to max_actions_per_step, override_system_message, extend_system_message
+			# These should ideally be stored or accessible
+			# For now, let's assume we can reconstruct the SystemPrompt instance logic
+			# This might require storing the original SystemPrompt args in MessageManager or passing them
+			# Let's try a simpler approach first: directly modify the content if possible,
+			# or replace the message if modification is complex.
+
+			# Simple approach: Replace the entire system message
+			# We need the original override/extend messages if they were used.
+			# Let's assume they are available via self.system_prompt (which holds the initial one)
+			# This assumes SystemPrompt class is imported here or accessible
+			from browser_use.agent.prompts import SystemPrompt # Import if not already done
+
+			# Get original override/extend messages if they exist
+			# This part is tricky as the original SystemPrompt instance isn't stored directly
+			# Let's assume we can access the initial settings used to create it.
+			# A better approach would be to store the SystemPrompt instance itself.
+			# Workaround: Re-create SystemPrompt using stored initial settings if possible.
+			# If not possible, we might need to refactor how SystemPrompt is handled.
+
+			# --- Refined Approach: Modify existing SystemMessage content ---
+			# This avoids needing the original SystemPrompt args, but assumes a fixed structure.
+			original_system_message_obj = self.state.history.messages[system_message_index]
+			original_content = str(original_system_message_obj.message.content)
+
+			# Find the part to replace (this depends heavily on SystemPrompt format)
+			# Example: Assuming action description is clearly marked like "Available actions:\n{action_description}"
+			# Let's refine the markers based on the actual SystemPrompt structure
+			start_marker = "Available actions:\n" # Default marker
+			# Try to find a more robust end marker if possible, e.g., the start of the next section
+			end_marker = "\n\n##" # Example: Assuming next section starts with ##
+
+			start_index = original_content.find(start_marker)
+			if start_index != -1:
+				# Calculate the actual start position after the marker
+				content_start_index = start_index + len(start_marker)
+				# Find the end index based on the end marker, starting search after the content_start_index
+				end_index = original_content.find(end_marker, content_start_index)
+
+				# If end_marker is not found, assume the action description goes to the end of the string
+				if end_index == -1:
+					new_content = original_content[:content_start_index] + action_description
+				else:
+					# Construct the new content by replacing the old action description
+					new_content = original_content[:content_start_index] + action_description + original_content[end_index:]
+
+				# Create a new SystemMessage with updated content
+				new_system_message = SystemMessage(content=new_content)
+
+				# Calculate token difference and update history
+				old_tokens = original_system_message_obj.metadata.tokens
+				new_tokens = self._count_tokens(new_system_message)
+				token_diff = new_tokens - old_tokens
+
+				original_system_message_obj.message = new_system_message
+				original_system_message_obj.metadata.tokens = new_tokens
+				self.state.history.current_tokens += token_diff
+				logger.debug(f"Updated system prompt action description. Token diff: {token_diff}, New total tokens: {self.state.history.current_tokens}")
+			else:
+				logger.warning("Could not find action description marker in system prompt to update.")
+				# Fallback or error handling: Maybe replace the whole message if marker not found?
+				# For now, just log a warning.
+		else:
+			logger.warning("System message not found in history, cannot update action description.")
+
+
 	def add_new_task(self, new_task: str) -> None:
 		content = f'Your new ultimate task is: """{new_task}""". Take the previous context into account and finish your new ultimate task. '
 		msg = HumanMessage(content=content)

@@ -171,17 +171,19 @@ class Agent(Generic[Context]):
 		# Model setup
 		self._set_model_names()
 
-		# for models without tool calling, add available actions to context
-		self.available_actions = self.controller.registry.get_prompt_description()
+		# available_actions は URL に依存するため、ここでは取得しない
+		# self.available_actions = self.controller.registry.get_prompt_description() # 削除
 
 		self.tool_calling_method = self._set_tool_calling_method()
-		self.settings.message_context = self._set_message_context()
+		# message_context の設定は _set_message_context で行うが、available_actions は使わない
+		self.settings.message_context = self._set_message_context() # _set_message_context の修正も必要
 
 		# Initialize message manager with state
+		# SystemPrompt の action_description は step ごとに更新するため、初期値は空文字列にする
 		self._message_manager = MessageManager(
 			task=task,
 			system_message=SystemPrompt(
-				action_description=self.available_actions,
+				action_description="", # 初期値は空にする
 				max_actions_per_step=self.settings.max_actions_per_step,
 				override_system_message=override_system_message,
 				extend_system_message=extend_system_message,
@@ -223,12 +225,14 @@ class Agent(Generic[Context]):
 			logger.info(f'Saving conversation to {self.settings.save_conversation_path}')
 
 	def _set_message_context(self) -> str | None:
-		if self.tool_calling_method == 'raw':
-			if self.settings.message_context:
-				self.settings.message_context += f'\n\nAvailable actions: {self.available_actions}'
-			else:
-				self.settings.message_context = f'Available actions: {self.available_actions}'
-		return self.settings.message_context
+		# available_actions は URL ごとに変わるので、ここでは message_context に追加しない
+		# 'raw' モードの場合の action_description の追加は step メソッド内で行う
+		# if self.tool_calling_method == 'raw':
+		# 	if self.settings.message_context:
+		# 		self.settings.message_context += f'\n\nAvailable actions: {self.available_actions}' # 削除
+		# 	else:
+		# 		self.settings.message_context = f'Available actions: {self.available_actions}' # 削除
+		return self.settings.message_context # 元の message_context をそのまま返す
 
 	def _set_browser_use_version_and_source(self) -> None:
 		"""Get the version and source of the browser-use package (git or pip in a nutshell)"""
@@ -282,11 +286,11 @@ class Agent(Generic[Context]):
 
 	def _setup_action_models(self) -> None:
 		"""Setup dynamic action models from controller's registry"""
-		self.ActionModel = self.controller.registry.create_action_model()
-		# Create output model with the dynamic actions
-		self.AgentOutput = AgentOutput.type_with_custom_actions(self.ActionModel)
-
-		# used to force the done action when max_steps is reached
+		# __init__ で _convert_initial_actions が呼ばれるため、一旦デフォルトのモデルを作成しておく
+		# step メソッドの最初で、現在の URL に基づいて上書きされる
+		self.ActionModel = self.controller.registry.create_action_model() # デフォルトモデル作成
+		self.AgentOutput = AgentOutput.type_with_custom_actions(self.ActionModel) # デフォルトモデル作成
+		# done は常に許可されるべきアクションなので、ここで固定で作成しておく
 		self.DoneActionModel = self.controller.registry.create_action_model(include_actions=['done'])
 		self.DoneAgentOutput = AgentOutput.type_with_custom_actions(self.DoneActionModel)
 
@@ -333,8 +337,28 @@ class Agent(Generic[Context]):
 
 		try:
 			state = await self.browser_context.get_state()
+			current_url = state.url # 現在のURLを取得
+
+			# --- URLに基づいてActionModelとAgentOutputを更新 ---
+			self.ActionModel = self.controller.create_action_model(current_url)
+			self.AgentOutput = AgentOutput.type_with_custom_actions(self.ActionModel)
+			# --- 更新完了 ---
 
 			await self._raise_if_stopped_or_paused()
+
+			# --- システムプロンプトのアクション説明を更新 ---
+			current_action_description = self.controller.get_prompt_description(current_url)
+			self._message_manager.update_system_prompt_action_description(current_action_description)
+			# --- 更新完了 ---
+
+			# --- 'raw' モードの場合、message_context にアクション説明を追加 ---
+			current_message_context = self.settings.message_context
+			if self.tool_calling_method == 'raw':
+				if current_message_context:
+					current_message_context += f'\n\nAvailable actions: {current_action_description}'
+				else:
+					current_message_context = f'Available actions: {current_action_description}'
+			# --- 追加完了 ---
 
 			self._message_manager.add_state_message(state, self.state.last_result, step_info, self.settings.use_vision)
 
@@ -352,9 +376,15 @@ class Agent(Generic[Context]):
 				msg += '\nInclude everything you found out for the ultimate task in the done text.'
 				logger.info('Last step finishing up')
 				self._message_manager._add_message_with_tokens(HumanMessage(content=msg))
+				# self.AgentOutput = self.DoneAgentOutput # 最後のステップでは DoneAgentOutput を使う
+				# ActionModel も DoneActionModel にする必要がある
+				self.ActionModel = self.DoneActionModel
 				self.AgentOutput = self.DoneAgentOutput
 
+
 			input_messages = self._message_manager.get_messages()
+			# 'raw' モードの場合、更新された message_context を最後のメッセージに追加（あるいはシステムメッセージを更新）
+			# ここでは簡単のため、最後のメッセージに追加するアプローチは取らない。SystemPrompt更新で対応済み。
 			tokens = self._message_manager.state.history.current_tokens
 
 			try:
@@ -936,8 +966,13 @@ class Agent(Generic[Context]):
 			return None
 
 		# Create planner message history using full message history
+		# Get current URL to fetch relevant actions for the planner prompt
+		current_page = await self.browser_context.get_current_page()
+		current_url = current_page.url
+		current_action_description = self.controller.get_prompt_description(current_url)
+
 		planner_messages = [
-			PlannerPrompt(self.controller.registry.get_prompt_description()).get_system_message(),
+			PlannerPrompt(current_action_description).get_system_message(), # Use current action description
 			*self._message_manager.get_messages()[1:],  # Use full message history except the first
 		]
 

@@ -1,6 +1,6 @@
 import asyncio
 from inspect import iscoroutinefunction, signature
-from typing import Any, Callable, Dict, Generic, Optional, Type, TypeVar
+from typing import Any, Callable, Dict, Generic, Optional, Type, TypeVar, List # List を追加
 
 from langchain_core.language_models.chat_models import BaseChatModel
 from pydantic import BaseModel, Field, create_model
@@ -194,6 +194,6 @@ class Registry(Generic[Context]):
 
 		return create_model('ActionModel', __base__=ActionModel, **fields)  # type:ignore
 
-	def get_prompt_description(self) -> str:
-		"""Get a description of all actions for the prompt"""
-		return self.registry.get_prompt_description()
+	def get_prompt_description(self, allowed_actions: Optional[list[str]] = None) -> str:
+		"""Get a description of actions for the prompt, optionally filtered by allowed_actions"""
+		return self.registry.get_prompt_description(allowed_actions=allowed_actions)

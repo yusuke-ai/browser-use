@@ -129,9 +129,12 @@ async def test_act_with_dom_changes(controller, mock_browser_context, mock_regis
 		assert result.extracted_content == "Action executed" # モックの返り値
 		
 		# dom_changes が設定されていることを確認
-		# ※注意: このテストは act メソッド内の result.dom_changes = detected_changes の
-		# コメントアウトが解除されていることを前提としています。
-		assert result.dom_changes == expected_dom_changes
+		# HTML形式に変換されていることを確認
+		assert result.dom_changes is not None
+		assert isinstance(result.dom_changes, str)
+		assert "<div class='dom-changes'>" in result.dom_changes
+		assert "<span class='tag'>DIV</span>" in result.dom_changes
+		assert "<span class='content'>New Div</span>" in result.dom_changes
 
 @pytest.mark.asyncio # 非同期テストにマーク付与
 async def test_act_without_dom_changes(controller, mock_browser_context, mock_registry):
@@ -173,7 +176,7 @@ async def test_act_without_dom_changes(controller, mock_browser_context, mock_re
 		assert isinstance(result, ActionResult)
 		assert result.extracted_content == "Action executed"
 		# DOM変更がないので dom_changes は None のはず
-		assert result.dom_changes == []
+		assert result.dom_changes is None
 
 # TODO: アクションが str や None を返す場合のテストも追加 (現状維持方針なら不要)
 

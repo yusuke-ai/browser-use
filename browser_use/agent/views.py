@@ -98,7 +98,9 @@ class ActionResult(BaseModel):
 	include_in_memory: bool = False  # whether to include in past messages as context or not
 
 	changed_to_new_page: bool = Field(default=False, description="このアクションの結果、新しいページに遷移したか、またはタブが切り替わったかを示すフラグ")
-	dom_changes: Optional[List[Dict[str, str]]] = Field(default=None, description="このアクションの実行中に検知されたDOMの変更（要素の追加やテキスト変更）") # しおり: DOM変更情報を格納するフィールドを追加
+	dom_changes: Optional[str] = Field(default=None, description="このアクションの実行中に検知されたDOMの変更（要素の追加やテキスト変更）をHTML形式で格納")
+	target_element_xpath: Optional[str] = Field(default=None, description="操作対象の要素のXPath")
+	target_element_html: Optional[str] = Field(default=None, description="操作対象の要素のHTMLタグ（小要素を含む）")
 
 
 class StepMetadata(BaseModel):

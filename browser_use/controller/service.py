@@ -746,13 +746,46 @@ class Controller(Generic[Context]):
 
 			# しおり: ActionResultにDOM変更情報を追加する（インデントを for ループのレベルに戻す - タブ文字使用）
 			if isinstance(result, ActionResult):
-				result.dom_changes = detected_changes # 次のステップで有効化
+				# DOM変更情報をHTML形式に変換
 				if detected_changes:
 					# action_name が未定義の場合があるため、チェックを追加
 					log_action_name = action_name if action_name else "Unknown Action"
 					logger.info(f"DOM changes detected during action {log_action_name}: {detected_changes}")
-					# 必要であれば、既存の extracted_content に情報を追記
-					# result.extracted_content += f"\nDOM Changes: {json.dumps(detected_changes, ensure_ascii=False)}"
+					
+					# HTML形式に変換
+					html_changes = "<div class='dom-changes'>\n"
+					for change in detected_changes:
+						tag = change.get('tag', '')
+						content = change.get('content', '')
+						html_changes += f"  <div class='change-item'>\n"
+						html_changes += f"    <span class='tag'>{tag}</span>\n"
+						html_changes += f"    <span class='content'>{content}</span>\n"
+						html_changes += f"  </div>\n"
+					html_changes += "</div>"
+					
+					result.dom_changes = html_changes
+					
+				# 操作対象の要素情報を追加（クリックやテキスト入力などの場合）
+				if action_name in ['click_element', 'input_text'] and params is not None:
+					index = params.get('index') if isinstance(params, dict) else getattr(params, 'index', None)
+					if index is not None:
+						try:
+							element_node = await browser_context.get_dom_element_by_index(index)
+							if element_node:
+								# XPathを保存
+								result.target_element_xpath = element_node.xpath
+								
+								# 要素のHTMLを取得
+								page = await browser_context.get_current_page()
+								element_handle = await browser_context.get_locate_element(element_node)
+								if element_handle:
+									try:
+										outer_html = await element_handle.evaluate('el => el.outerHTML')
+										result.target_element_html = outer_html
+									except Exception as e:
+										logger.warning(f"Failed to get element HTML: {e}")
+						except Exception as e:
+							logger.warning(f"Failed to get element information: {e}")
 
 			if isinstance(result, str): # しおり: インデント修正 (タブ文字使用)
 				return ActionResult(extracted_content=result)

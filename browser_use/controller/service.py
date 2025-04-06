@@ -624,6 +624,16 @@ class Controller(Generic[Context]):
 		# 許可されたアクションのみを含むモデルを作成
 		return self.registry.create_action_model(include_actions=allowed_actions)
 
+	# ★ 新しいメソッド: 共通アクションの説明を取得 (Registryを呼び出す)
+	def get_common_prompt_description(self) -> str:
+		"""Get a description of common actions for the prompt."""
+		return self.registry.get_common_prompt_description()
+
+	# ★ 新しいメソッド: サイト固有アクションの説明を取得 (Registryを呼び出す)
+	def get_site_specific_prompt_description(self, url: str) -> str:
+		"""Get a description of site-specific actions for a given URL."""
+		return self.registry.get_site_specific_prompt_description(url)
+
 	# Register ---------------------------------------------------------------
 
 	async def maybe_get_content_if_pdf(self, context, page):

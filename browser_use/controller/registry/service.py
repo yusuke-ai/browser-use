@@ -224,3 +224,22 @@ class Registry(Generic[Context]):
 	def get_prompt_description(self, allowed_actions: Optional[list[str]] = None) -> str:
 		"""Get a description of actions for the prompt, optionally filtered by allowed_actions"""
 		return self.registry.get_prompt_description(allowed_actions=allowed_actions)
+
+	# ★ 新しいメソッド: 共通アクションの説明を取得
+	def get_common_prompt_description(self) -> str:
+		"""Get a description of common actions (url_patterns is None) for the prompt."""
+		common_actions = [
+			action for action in self.registry.actions.values()
+			if action.url_patterns is None and action.name not in self.exclude_actions
+		]
+		return '\n'.join([action.prompt_description() for action in common_actions])
+
+	# ★ 新しいメソッド: サイト固有アクションの説明を取得
+	def get_site_specific_prompt_description(self, url: str) -> str:
+		"""Get a description of site-specific actions for a given URL."""
+		allowed_action_names = self.get_allowed_actions(url)
+		site_specific_actions = [
+			action for name, action in self.registry.actions.items()
+			if name in allowed_action_names and action.url_patterns is not None
+		]
+		return '\n'.join([action.prompt_description() for action in site_specific_actions])

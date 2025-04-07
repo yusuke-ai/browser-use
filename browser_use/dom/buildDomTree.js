@@ -699,7 +699,7 @@
     let hasPointerCursor = false;
     try {
         const style = getCachedComputedStyle(element); // Use cached style
-        hasPointerCursor = style?.cursor === 'pointer';
+        hasPointerCursor = style?.cursor === 'pointer' || (element.classList && element.classList.contains('cursor-pointer'));
     } catch(e) { /* ignore */ }
 
     return (
@@ -842,7 +842,11 @@
       element.hasAttribute("aria-") ||
       element.hasAttribute("data-action");
 
-    return hasQuickInteractiveAttr;
+    // 追加：cursor-pointer クラスがあれば即 interactive とする
+    const hasCursorPointer = element.classList && element.classList.contains("cursor-pointer");
+    
+    // どちらか一方でも true なら interactive とみなす
+    return hasQuickInteractiveAttr || hasCursorPointer;
   }
 
   function quickVisibilityCheck(element) {

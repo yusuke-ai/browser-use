@@ -469,6 +469,17 @@ class BrowserContext:
 		# しおり: 新しいページが開かれたときのリスナーを追加
 		await self._add_new_page_listener(context)
 
+		# ★追加(再): ブラウザのコンソール出力をPythonのログに転送するリスナー★
+		async def handle_console_message(msg):
+			# JavaScriptデバッグログを INFO レベルで出力
+			logger.error(f"Browser Console (JS Debug): {msg.text}")
+			# その他のコンソールメッセージは DEBUG レベルで出力 (必要に応じて調整)
+			# elif msg.type in ['log', 'info', 'debug', 'warn', 'error']:
+			#     logger.debug(f"Browser Console ({msg.type}): {msg.text}")
+		context.on("console", handle_console_message)
+		logger.error("Added console message listener to context.")
+		# ★追加(再)ここまで★
+
 		return context
 
 	async def _wait_for_stable_network(self):

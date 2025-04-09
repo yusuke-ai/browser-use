@@ -760,7 +760,7 @@ class Controller(Generic[Context]):
 				if detected_changes:
 					# action_name が未定義の場合があるため、チェックを追加
 					log_action_name = action_name if action_name else "Unknown Action"
-					logger.info(f"DOM changes detected during action {log_action_name}: {detected_changes}")
+					# logger.info(f"DOM changes detected during action {log_action_name}: {detected_changes}")
 					
 					# 検出されたDOM変更をリストに追加
 					if result.dom_changes is None:

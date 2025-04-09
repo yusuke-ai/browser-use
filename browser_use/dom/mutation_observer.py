@@ -33,7 +33,7 @@ async def dom_mutation_change_detected(changes_json: str):
     try:
         changes_detected: List[Dict[str, str]] = json.loads(changes_json)
         if changes_detected:
-            logger.info(f"DOM mutation detected: {changes_detected}")
+            # logger.info(f"DOM mutation detected: {changes_detected}")
             # 現在登録されているコールバックのコピーに対して通知（ループ中の変更に対応）
             callbacks_to_notify = []
             async with _lock:
